@@ -180,7 +180,7 @@ func TestResourceConfigValidation(t *testing.T) {
 		all     bool
 		regions []string
 		valid   bool
-	}{{"default", false, []string{}, true}, {"all", true, []string{}, true}, {"explicit", false, []string{"fra-1"}, true}, {"conflict", true, []string{"fra-1"}, false}, {"invalid region", false, []string{"../region"}, false}} {
+	}{{"default", false, []string{}, true}, {"all", true, []string{}, true}, {"explicit", false, []string{"fra"}, true}, {"conflict", true, []string{"fra"}, false}, {"invalid region", false, []string{"../region"}, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := databaseState()
 			m.ID = types.StringNull()
@@ -284,14 +284,14 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 			body := `{"name":"main","replicaRegions":null}`
 			config := databaseConfig()
 			if explicit {
-				config.HomeRegion = types.StringValue("gru-1")
-				config.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+				config.HomeRegion = types.StringValue("gru")
+				config.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra"})
 				if mode == "explicit replicas" {
 					config.AllRegions = types.BoolValue(false)
 				}
-				body = `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`
+				body = `{"name":"main","homeRegion":"gru","replicaRegions":["fra"]}`
 			}
-			server := placementServer(t, fakeClients(t, step{method: "POST", path: databasesPath, body: body, response: databaseJSON(false, `["fra-1"]`), status: 201}))
+			server := placementServer(t, fakeClients(t, step{method: "POST", path: databasesPath, body: body, response: databaseJSON(false, `["fra"]`), status: 201}))
 			null := dynamic(t, emptyState(t, &databaseResource{}))
 			cfg := dynamic(t, stateFor(t, &databaseResource{}, config))
 			plan, err := server.PlanResourceChange(t.Context(), &tfprotov6.PlanResourceChangeRequest{TypeName: "terrascale_database", PriorState: null, Config: cfg, ProposedNewState: cfg})
@@ -314,7 +314,7 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 			state := databaseProtocolState(t, applied.NewState)
 			var actual databaseModel
 			noErrors(t, state.Get(t.Context(), &actual))
-			if actual.HomeRegion.ValueString() != "gru-1" || len(actual.ReplicaRegions.Elements()) != 1 || actual.AllRegions.ValueBool() {
+			if actual.HomeRegion.ValueString() != "gru" || len(actual.ReplicaRegions.Elements()) != 1 || actual.AllRegions.ValueBool() {
 				t.Fatal("server-selected placement not retained")
 			}
 			next, err := server.PlanResourceChange(t.Context(), &tfprotov6.PlanResourceChangeRequest{TypeName: "terrascale_database", PriorState: applied.NewState, Config: cfg, ProposedNewState: applied.NewState})
@@ -330,7 +330,7 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 func TestDatabaseProtocolImportPreservesOmittedPlacement(t *testing.T) {
 	for _, all := range []bool{false, true} {
 		t.Run(map[bool]string{false: "listed", true: "all regions"}[all], func(t *testing.T) {
-			regions := `["fra-1"]`
+			regions := `["fra"]`
 			if all {
 				regions = `[]`
 			}
@@ -363,11 +363,11 @@ func TestDatabaseProtocolPlacementUpdates(t *testing.T) {
 		all            types.Bool
 		body, response string
 	}{
-		{name: "enable all", priorRegions: `["fra-1"]`, all: types.BoolValue(true), body: `{"allRegions":true}`, response: databaseJSON(true, `[]`)},
+		{name: "enable all", priorRegions: `["fra"]`, all: types.BoolValue(true), body: `{"allRegions":true}`, response: databaseJSON(true, `[]`)},
 		{name: "disable all", priorAll: true, priorRegions: `[]`, all: types.BoolValue(false), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
-		{name: "explicit list replaces all", priorAll: true, priorRegions: `[]`, replicas: []string{"fra-1"}, all: types.BoolNull(), body: `{"replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`)},
+		{name: "explicit list replaces all", priorAll: true, priorRegions: `[]`, replicas: []string{"fra"}, all: types.BoolNull(), body: `{"replicaRegions":["fra"]}`, response: databaseJSON(false, `["fra"]`)},
 		{name: "explicit empty disables all", priorAll: true, priorRegions: `[]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
-		{name: "explicit empty clears replicas", priorRegions: `["fra-1"]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
+		{name: "explicit empty clears replicas", priorRegions: `["fra"]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fakeClients(t, step{method: "GET", path: databasePath, response: databaseJSON(tc.priorAll, tc.priorRegions)}, step{method: "PATCH", path: databasePath, body: tc.body, response: tc.response})
@@ -461,7 +461,7 @@ func TestDatabaseHomeRegionChangeRequiresReplacement(t *testing.T) {
 	server := providerserver.NewProtocol6(New("test")())()
 	prior := databaseState()
 	config := databaseConfig()
-	config.HomeRegion = types.StringValue("fra-1")
+	config.HomeRegion = types.StringValue("fra")
 	proposed := prior
 	proposed.HomeRegion = config.HomeRegion
 	resp, err := server.PlanResourceChange(t.Context(), &tfprotov6.PlanResourceChangeRequest{TypeName: "terrascale_database", PriorState: dynamic(t, stateFor(t, &databaseResource{}, prior)), Config: dynamic(t, stateFor(t, &databaseResource{}, config)), ProposedNewState: dynamic(t, stateFor(t, &databaseResource{}, proposed))})

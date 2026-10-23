@@ -45,7 +45,10 @@ Every configuration change replaces the key and revokes the old key. Deletion
 revokes immediately. `documents:read` also permits collection reads;
 `documents:write` permits collection creation and deletion. The collection
 resource needs both scopes for its full lifecycle, including read-before-delete
-identity checks. A read-only key cannot create or delete collections.
+identity checks. A read-only key cannot create or delete collections. A key with both scopes can
+configure a separate collection provider alias using its `secret`; see the
+[collection example](collection.md). The alias exchanges the key for a project
+access token.
 If creation has an uncertain outcome, inspect the project's keys before retrying;
 the provider does not retry uncertain mutations or recover the one-time secret.
 

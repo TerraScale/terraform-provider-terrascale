@@ -46,17 +46,22 @@ resource "terrascale_database" "main" {
 - `TERRASCALE_ACCESS_TOKEN`: existing **ts-cli user access token from ts-auth**, used by
   project, database and API-key management. An organization ID is not a credential.
   Never use an internal peer credential.
-- `TERRASCALE_PROJECT_TOKEN`: existing **project API key or project access token**,
+- `TERRASCALE_PROJECT_TOKEN`: **public ts-auth project API key or project access token**,
   needed only for collections. It must authorize the collection's project and
   collection operations. Collection reads require `documents:read`; creation and
   deletion require `documents:write`. Use both scopes for the provider's complete
-  collection lifecycle, including its read-before-delete identity check.
+  collection lifecycle, including its read-before-delete identity check. Public
+  keys (`<ULID>_<52 base32 characters>`) are exchanged for a cached token with
+  only those two scopes; ts-auth derives the project from the key metadata.
+  Project access tokens are sent directly.
 
 Explicit `access_token` and `project_token` provider attributes override the
 corresponding environment value. Keep credentials out of checked-in HCL and shell
 arguments. Use provider aliases with separate existing credentials for collections
 in different projects. Do not configure a provider using a resource managed by
-that same provider, which introduces a dependency cycle.
+that same provider, which introduces a dependency cycle. A key created by the
+default management provider can configure a separate collection provider alias;
+see the [collection example](docs/resources/collection.md).
 
 `terrascale_api_key.secret` is returned once and **stored in Terraform state**.
 Sensitive marking hides normal display; it does not encrypt state or saved plans.

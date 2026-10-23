@@ -5,17 +5,43 @@ description: "Manage an empty schemaless TerraScale collection."
 
 # terrascale_collection (Resource)
 
-Requires an existing provider `project_token` authorized for the project and
-collection operations: `documents:read` for reads, and `documents:write` for
+Requires a provider `project_token`: a public ts-auth project API key or project
+access token authorized for the project and collection operations: `documents:read` for reads, and `documents:write` for
 creation/deletion. Use both scopes for the complete lifecycle, including the
 read-before-delete identity check. Management's user access token alone is
 insufficient.
-Deletion and replacement remove every document in the collection.
+
+Public keys are exchanged for a cached token requesting only those two document
+scopes. The server binds the token to the project in the key metadata; the
+provider does not infer a project from the key ID. Static project JWTs remain
+supported.
+
+Deletion and replacement remove every document in the collection. The example
+below assumes an existing `main` database. The default provider creates the key;
+a separate alias uses it for collections without a provider dependency cycle.
 
 ```terraform
+# The default provider uses TERRASCALE_ACCESS_TOKEN for key management.
+provider "terrascale" {}
+
+resource "terrascale_api_key" "collections" {
+  organization_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+  project_id      = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
+  name            = "Terraform collections"
+  database_name   = "main"
+  scopes          = ["documents:read", "documents:write"]
+}
+
+# This alias depends on a key managed by the default provider, avoiding a cycle.
+provider "terrascale" {
+  alias         = "collections"
+  project_token = terrascale_api_key.collections.secret
+}
+
 resource "terrascale_collection" "users" {
-  project_id    = terrascale_database.main.project_id
-  database_name = terrascale_database.main.name
+  provider      = terrascale.collections
+  project_id    = terrascale_api_key.collections.project_id
+  database_name = "main"
   name          = "users"
 
   lifecycle {

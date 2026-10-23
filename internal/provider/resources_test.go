@@ -529,28 +529,43 @@ func TestCreatedKeyWithoutSecretRetainsRevocableIdentity(t *testing.T) {
 	}
 }
 
-func TestDatabaseEmptyCreationPlacementFailsBeforeMutation(t *testing.T) {
-	r := &databaseResource{clients: fakeClients(t)}
-	m := databaseState()
-	m.ID = types.StringUnknown()
-	resp := resource.CreateResponse{State: emptyState(t, r)}
-	r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
-	if !resp.Diagnostics.HasError() || !resp.State.Raw.IsNull() {
-		t.Fatal("empty placement creation must fail without creating a database")
+func TestDatabaseInvalidCreationPlacementFailsBeforeMutation(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(map[bool]string{false: "empty listed", true: "all with replicas"}[all], func(t *testing.T) {
+			r := &databaseResource{clients: fakeClients(t)}
+			m := databaseState()
+			m.ID = types.StringUnknown()
+			m.AllRegions = types.BoolValue(all)
+			if all {
+				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+			}
+			resp := resource.CreateResponse{State: emptyState(t, r)}
+			r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
+			if !resp.Diagnostics.HasError() || !resp.State.Raw.IsNull() {
+				t.Fatal("invalid placement creation must fail without creating a database")
+			}
+		})
 	}
 }
 
 func TestDatabaseAllRegionsCreationAllowsEmptyReplicaSet(t *testing.T) {
-	r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":[],"allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
-	m := databaseState()
-	m.ID = types.StringUnknown()
-	m.AllRegions = types.BoolValue(true)
-	resp := resource.CreateResponse{State: emptyState(t, r)}
-	r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
-	noErrors(t, resp.Diagnostics)
-	noErrors(t, resp.State.Get(t.Context(), &m))
-	if !m.AllRegions.ValueBool() || len(m.ReplicaRegions.Elements()) != 0 {
-		t.Fatal("explicit all-region placement not retained")
+	for _, omitted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "explicit empty", true: "omitted"}[omitted], func(t *testing.T) {
+			r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":null,"allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
+			m := databaseState()
+			m.ID = types.StringUnknown()
+			m.AllRegions = types.BoolValue(true)
+			if omitted {
+				m.ReplicaRegions = types.SetUnknown(types.StringType)
+			}
+			resp := resource.CreateResponse{State: emptyState(t, r)}
+			r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
+			noErrors(t, resp.Diagnostics)
+			noErrors(t, resp.State.Get(t.Context(), &m))
+			if !m.AllRegions.ValueBool() || m.ReplicaRegions.IsNull() || m.ReplicaRegions.IsUnknown() || len(m.ReplicaRegions.Elements()) != 0 {
+				t.Fatal("all-region placement must retain a known empty replica set in state")
+			}
+		})
 	}
 }
 

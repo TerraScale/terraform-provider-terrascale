@@ -88,8 +88,15 @@ func (r *databaseResource) Create(ctx context.Context, req resource.CreateReques
 			resp.Diagnostics.AddError("Empty creation placement", "Omit replica_regions to accept server placement, name at least one replica, or set all_regions=true. An explicit empty replica set is supported only for updates or all-region placement.")
 		}
 	}
+	if m.AllRegions.ValueBool() && len(regions) > 0 {
+		resp.Diagnostics.AddError("Conflicting placement", "all_regions=true requires replica_regions to be empty.")
+	}
 	if resp.Diagnostics.HasError() {
 		return
+	}
+	if m.AllRegions.ValueBool() {
+		// The public API rejects any nonnull replica list with all-region creation.
+		regions = nil
 	}
 	db, err := m.database(ctx, r.clients)
 	if err != nil {

@@ -68,6 +68,8 @@ func TestConfigureCredentials(t *testing.T) {
 		{name: "environment", access: "fixture.user.signature", project: "fixture.project.signature", env: true, valid: true},
 		{name: "invalid user token", access: "fixture\nsecret", valid: false},
 		{name: "invalid project token", project: "fixture-secret", valid: false},
+		{name: "legacy key", project: "tb_" + strings.Repeat("a", 43), valid: false},
+		{name: "public key", project: keyID + "_" + strings.Repeat("a", 52), valid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("TERRASCALE_ACCESS_TOKEN", "")

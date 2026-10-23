@@ -1,0 +1,8 @@
+/dist/
+/terraform-provider-terrascale
+/terraform-provider-terrascale.exe
+*.test
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log

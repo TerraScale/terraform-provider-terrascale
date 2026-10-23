@@ -16,6 +16,9 @@ import (
 	tb "terrascale.tech/sdk/v1"
 )
 
+// SDK v0.0.1 does not export the registered public CLI client ID.
+const cliClientID = "00000000000000000000000007"
+
 type terraScaleProvider struct{ version string }
 type providerModel struct {
 	AccessToken  types.String `tfsdk:"access_token"`
@@ -66,7 +69,7 @@ func (p *terraScaleProvider) Configure(ctx context.Context, req provider.Configu
 				return
 			}
 			c.management = m.WithToken(token)
-			c.exchange = tsauth.ExchangeConfig{ClientID: "ts-cli", SubjectToken: func(context.Context) (string, error) { return token, nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}}
+			c.exchange = tsauth.ExchangeConfig{ClientID: cliClientID, SubjectToken: func(context.Context) (string, error) { return token, nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}}
 		}
 	}
 	if !config.ProjectToken.IsUnknown() {

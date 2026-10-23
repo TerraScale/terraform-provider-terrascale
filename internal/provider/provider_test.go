@@ -102,7 +102,7 @@ func TestConfigureCredentials(t *testing.T) {
 				}
 				if tc.access != "" {
 					token, err := c.exchange.SubjectToken(t.Context())
-					if err != nil || token != tc.access || c.exchange.ClientID != "ts-cli" || !slices.Equal(c.exchange.Scopes, []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}) {
+					if err != nil || token != tc.access || c.exchange.ClientID != "00000000000000000000000007" || !slices.Equal(c.exchange.Scopes, []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}) {
 						t.Fatal("incorrect user exchange configuration")
 					}
 				}

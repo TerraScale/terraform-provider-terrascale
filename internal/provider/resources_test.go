@@ -56,7 +56,7 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 			if err := req.ParseForm(); err != nil {
 				t.Error(err)
 			}
-			want := map[string]string{"client_id": "ts-cli", "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": "fixture.user.signature", "organization": orgID, "project": projectID, "scope": "databases:read databases:write"}
+			want := map[string]string{"client_id": "00000000000000000000000007", "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": "fixture.user.signature", "organization": orgID, "project": projectID, "scope": "databases:read databases:write"}
 			if req.Method != "POST" || len(req.Form) != len(want) {
 				t.Error("incorrect token exchange request")
 			}
@@ -137,7 +137,7 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 		t.Fatal(err)
 	}
 	return &clients{management: m.WithToken("fixture.user.signature"), data: c,
-		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: "ts-cli", SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
+		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: cliClientID, SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
 		databaseConfig: tb.Config{BaseURL: server.URL, HTTPClient: server.Client(), MaxRetries: -1},
 	}
 }

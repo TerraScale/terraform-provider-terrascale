@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -38,6 +39,20 @@ func (r *databaseResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 }
 func (r *databaseResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	configure(req, resp, &r.clients)
+}
+func (r *databaseResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || !req.Plan.Raw.IsKnown() {
+		return
+	}
+	var config databaseModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if config.AllRegions.IsNull() && !config.ReplicaRegions.IsNull() && !config.ReplicaRegions.IsUnknown() {
+		// Explicit replicas select listed placement even when computed state retains all_regions=true.
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("all_regions"), types.BoolValue(false))...)
+	}
 }
 func (r *databaseResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var m databaseModel

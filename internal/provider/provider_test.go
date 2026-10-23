@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	providerschema "github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -257,14 +258,17 @@ func databaseProtocolState(t *testing.T, v *tfprotov6.DynamicValue) tfsdk.State 
 	return tfsdk.State{Schema: s, Raw: raw}
 }
 func TestDatabaseProtocolPlacement(t *testing.T) {
-	for _, explicit := range []bool{false, true} {
-		t.Run(map[bool]string{false: "server-selected", true: "explicit replicas"}[explicit], func(t *testing.T) {
+	for _, mode := range []string{"server-selected", "explicit replicas", "explicit replicas with omitted mode"} {
+		t.Run(mode, func(t *testing.T) {
+			explicit := mode != "server-selected"
 			body := `{"name":"main"}`
 			config := databaseConfig()
 			if explicit {
 				config.HomeRegion = types.StringValue("gru-1")
 				config.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
-				config.AllRegions = types.BoolValue(false)
+				if mode == "explicit replicas" {
+					config.AllRegions = types.BoolValue(false)
+				}
 				body = `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`
 			}
 			server := placementServer(t, fakeClients(t, step{method: "POST", path: projectPath + "/databases", body: body, response: databaseJSON(false, `["fra-1"]`), status: 201}))
@@ -277,7 +281,7 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 			var planned databaseModel
 			noErrors(t, databaseProtocolState(t, plan.PlannedState).Get(t.Context(), &planned))
 			if explicit {
-				if !planned.ReplicaRegions.Equal(config.ReplicaRegions) || !planned.HomeRegion.Equal(config.HomeRegion) || !planned.AllRegions.Equal(config.AllRegions) {
+				if !planned.ReplicaRegions.Equal(config.ReplicaRegions) || !planned.HomeRegion.Equal(config.HomeRegion) || !planned.AllRegions.Equal(types.BoolValue(false)) {
 					t.Fatal("explicit placement changed during plan")
 				}
 			} else if !planned.ReplicaRegions.IsUnknown() || !planned.HomeRegion.IsUnknown() || !planned.AllRegions.IsUnknown() {
@@ -342,6 +346,7 @@ func TestDatabaseProtocolPlacementUpdates(t *testing.T) {
 		{name: "enable all", priorRegions: `["fra-1"]`, all: types.BoolValue(true), body: `{"allRegions":true}`, response: databaseJSON(true, `[]`)},
 		{name: "disable all", priorAll: true, priorRegions: `[]`, all: types.BoolValue(false), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 		{name: "explicit list replaces all", priorAll: true, priorRegions: `[]`, replicas: []string{"fra-1"}, all: types.BoolNull(), body: `{"replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`)},
+		{name: "explicit empty disables all", priorAll: true, priorRegions: `[]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 		{name: "explicit empty clears replicas", priorRegions: `["fra-1"]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,6 +375,13 @@ func TestDatabaseProtocolPlacementUpdates(t *testing.T) {
 			if err != nil || protocolErrors(plan.Diagnostics) || len(plan.RequiresReplace) != 0 {
 				t.Fatalf("update plan failed: %v %v", err, plan.Diagnostics)
 			}
+			if tc.replicas != nil && tc.all.IsNull() {
+				var planned databaseModel
+				noErrors(t, databaseProtocolState(t, plan.PlannedState).Get(t.Context(), &planned))
+				if !planned.AllRegions.Equal(types.BoolValue(false)) {
+					t.Fatal("explicit replicas must plan all_regions=false")
+				}
+			}
 			applied, err := server.ApplyResourceChange(t.Context(), &tfprotov6.ApplyResourceChangeRequest{TypeName: "terrascale_database", PriorState: priorValue, Config: cfg, PlannedState: plan.PlannedState})
 			if err != nil || protocolErrors(applied.Diagnostics) {
 				t.Fatalf("update apply failed: %v %v", err, applied.Diagnostics)
@@ -381,6 +393,45 @@ func TestDatabaseProtocolPlacementUpdates(t *testing.T) {
 			}
 			if tc.replicas != nil && !actual.ReplicaRegions.Equal(config.ReplicaRegions) {
 				t.Fatal("explicit replica list lost")
+			}
+		})
+	}
+}
+
+func TestDatabaseProtocolUnresolvedPlacement(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		replicas types.Set
+		all      types.Bool
+		wantAll  types.Bool
+	}{
+		{"both omitted", types.SetNull(types.StringType), types.BoolNull(), types.BoolValue(true)},
+		{"unknown replicas", types.SetUnknown(types.StringType), types.BoolNull(), types.BoolUnknown()},
+		{"unknown mode", types.SetValueMust(types.StringType, nil), types.BoolUnknown(), types.BoolUnknown()},
+		{"unknown replica element", types.SetValueMust(types.StringType, []attr.Value{types.StringUnknown()}), types.BoolNull(), types.BoolValue(false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := placementServer(t, fakeClients(t))
+			prior := databaseState()
+			prior.AllRegions = types.BoolValue(true)
+			config := databaseConfig()
+			config.ReplicaRegions = tc.replicas
+			config.AllRegions = tc.all
+			proposed := prior
+			if !tc.replicas.IsNull() {
+				proposed.ReplicaRegions = tc.replicas
+			}
+			if !tc.all.IsNull() {
+				proposed.AllRegions = tc.all
+			}
+			plan, err := server.PlanResourceChange(t.Context(), &tfprotov6.PlanResourceChangeRequest{TypeName: "terrascale_database", PriorState: dynamic(t, stateFor(t, &databaseResource{}, prior)), Config: dynamic(t, stateFor(t, &databaseResource{}, config)), ProposedNewState: dynamic(t, stateFor(t, &databaseResource{}, proposed))})
+			if err != nil || protocolErrors(plan.Diagnostics) || len(plan.RequiresReplace) != 0 {
+				t.Fatalf("placement plan failed: %v %v", err, plan.Diagnostics)
+			}
+			var planned databaseModel
+			noErrors(t, databaseProtocolState(t, plan.PlannedState).Get(t.Context(), &planned))
+			if !planned.AllRegions.Equal(tc.wantAll) || !planned.ReplicaRegions.Equal(proposed.ReplicaRegions) {
+				t.Fatalf("unexpected placement plan: %+v", planned)
 			}
 		})
 	}

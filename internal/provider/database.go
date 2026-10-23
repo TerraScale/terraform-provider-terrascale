@@ -34,7 +34,7 @@ func (r *databaseResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 	resp.Schema = schema.Schema{Description: "A database. Name, parent or home region changes replace it and delete its data. Replicas must be cleared before deletion; the provider never removes replicas automatically.", Attributes: map[string]schema.Attribute{
 		"id": stateID(), "organization_id": idAttribute("Owning organization ULID."), "project_id": idAttribute("Owning project ULID."),
 		"name":            schema.StringAttribute{Required: true, Description: "Lowercase database name, up to 63 characters. Changes replace the database.", Validators: []validator.String{stringvalidator.RegexMatches(namePattern, "Use a lowercase name starting with a letter, followed by letters, digits, _ or -; maximum 63 characters.")}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"home_region":     schema.StringAttribute{Optional: true, Computed: true, Description: "Region ID such as gru-1. Defaults to the API's region. Changes replace the database.", Validators: []validator.String{stringvalidator.RegexMatches(namePattern, "Use a region ID such as gru-1.")}, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
+		"home_region":     schema.StringAttribute{Optional: true, Computed: true, Description: "Region ID such as gru. Defaults to the API's region. Changes replace the database.", Validators: []validator.String{stringvalidator.RegexMatches(namePattern, "Use a region ID such as gru.")}, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
 		"replica_regions": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Complete set of replica region IDs. Omit both placement controls to accept API placement on creation and preserve existing placement. Empty is supported for updates; creation requires replicas or all_regions=true."},
 		"all_regions":     schema.BoolAttribute{Optional: true, Computed: true, Description: "Replicate to every serving region, including future regions. Omit both placement controls to accept API placement or preserve existing placement; an explicit replica_regions set selects listed placement. Cannot be combined with nonempty replica_regions."},
 	}}
@@ -64,7 +64,7 @@ func (r *databaseResource) ValidateConfig(ctx context.Context, req resource.Vali
 	}
 	for _, v := range m.ReplicaRegions.Elements() {
 		if s, ok := v.(types.String); ok && !s.IsUnknown() && (s.IsNull() || !namePattern.MatchString(s.ValueString())) {
-			resp.Diagnostics.AddError("Invalid region", "replica_regions must contain region IDs such as gru-1.")
+			resp.Diagnostics.AddError("Invalid region", "replica_regions must contain region IDs such as gru.")
 		}
 	}
 }

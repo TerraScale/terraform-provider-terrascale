@@ -175,7 +175,7 @@ func projectJSON(name string) string {
 	return `{"id":"` + projectID + `","organization_id":"` + orgID + `","created_by":"` + collectionID + `","name":"` + name + `"}`
 }
 func databaseJSON(all bool, regions string) string {
-	return `{"id":"` + databaseID + `","projectId":"` + projectID + `","name":"main","homeRegion":"gru-1","replicaRegions":` + regions + `,"allRegions":` + map[bool]string{true: "true", false: "false"}[all] + `}`
+	return `{"id":"` + databaseID + `","projectId":"` + projectID + `","name":"main","homeRegion":"gru","replicaRegions":` + regions + `,"allRegions":` + map[bool]string{true: "true", false: "false"}[all] + `}`
 }
 func collectionJSON(id string) string { return `{"id":"` + id + `","name":"users","created_at":"1"}` }
 func keyJSON() string {
@@ -185,7 +185,7 @@ func projectState() projectModel {
 	return projectModel{ID: types.StringValue(projectID), OrganizationID: types.StringValue(orgID), Name: types.StringValue("app")}
 }
 func databaseState() databaseModel {
-	return databaseModel{ID: types.StringValue(databaseID), OrganizationID: types.StringValue(orgID), ProjectID: types.StringValue(projectID), Name: types.StringValue("main"), HomeRegion: types.StringValue("gru-1"), ReplicaRegions: types.SetValueMust(types.StringType, nil), AllRegions: types.BoolValue(false)}
+	return databaseModel{ID: types.StringValue(databaseID), OrganizationID: types.StringValue(orgID), ProjectID: types.StringValue(projectID), Name: types.StringValue("main"), HomeRegion: types.StringValue("gru"), ReplicaRegions: types.SetValueMust(types.StringType, nil), AllRegions: types.BoolValue(false)}
 }
 func collectionState() collectionModel {
 	return collectionModel{ID: types.StringValue(collectionID), ProjectID: types.StringValue(projectID), DatabaseName: types.StringValue("main"), Name: types.StringValue("users")}
@@ -232,20 +232,20 @@ func TestProjectLifecycle(t *testing.T) {
 }
 func TestDatabaseLifecycle(t *testing.T) {
 	r := &databaseResource{clients: fakeClients(t,
-		step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`), status: 201},
-		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
-		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
+		step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru","replicaRegions":["fra"]}`, response: databaseJSON(false, `["fra"]`), status: 201},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra"]`)},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra"]`)},
 		step{method: "PATCH", path: databasePath, body: `{"allRegions":true}`, response: databaseJSON(true, `[]`)},
 		step{method: "GET", path: databasePath, response: databaseJSON(true, `[]`)},
-		step{method: "PATCH", path: databasePath, body: `{"replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`)},
-		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
+		step{method: "PATCH", path: databasePath, body: `{"replicaRegions":["fra"]}`, response: databaseJSON(false, `["fra"]`)},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra"]`)},
 		step{method: "PATCH", path: databasePath, body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 		step{method: "GET", path: databasePath, response: databaseJSON(false, `[]`)},
 		step{method: "DELETE", path: databasePath, status: 204},
 	)}
 	m := databaseState()
 	m.ID = types.StringUnknown()
-	m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+	m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra"})
 	create := resource.CreateResponse{State: tfsdk.State{Schema: schemaFor(t, r)}}
 	r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &create)
 	noErrors(t, create.Diagnostics)
@@ -253,7 +253,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	r.Read(t.Context(), resource.ReadRequest{State: create.State}, &read)
 	noErrors(t, read.Diagnostics)
 	noErrors(t, read.State.Get(t.Context(), &m))
-	if m.ReplicaRegions.IsNull() || m.HomeRegion.ValueString() != "gru-1" {
+	if m.ReplicaRegions.IsNull() || m.HomeRegion.ValueString() != "gru" {
 		t.Fatal("placement not saved")
 	}
 	m.AllRegions = types.BoolValue(true)
@@ -265,7 +265,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatal("all regions not saved")
 	}
 	m.AllRegions = types.BoolValue(false)
-	m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+	m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra"})
 	r.Update(t.Context(), resource.UpdateRequest{Plan: planFor(t, r, m), State: update.State}, &update)
 	noErrors(t, update.Diagnostics)
 	noErrors(t, update.State.Get(t.Context(), &m))
@@ -537,7 +537,7 @@ func TestDatabaseInvalidCreationPlacementFailsBeforeMutation(t *testing.T) {
 			m.ID = types.StringUnknown()
 			m.AllRegions = types.BoolValue(all)
 			if all {
-				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra"})
 			}
 			resp := resource.CreateResponse{State: emptyState(t, r)}
 			r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
@@ -551,7 +551,7 @@ func TestDatabaseInvalidCreationPlacementFailsBeforeMutation(t *testing.T) {
 func TestDatabaseAllRegionsCreationAllowsEmptyReplicaSet(t *testing.T) {
 	for _, omitted := range []bool{false, true} {
 		t.Run(map[bool]string{false: "explicit empty", true: "omitted"}[omitted], func(t *testing.T) {
-			r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":null,"allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
+			r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru","replicaRegions":null,"allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
 			m := databaseState()
 			m.ID = types.StringUnknown()
 			m.AllRegions = types.BoolValue(true)
@@ -670,7 +670,7 @@ func TestDatabaseImportLookupPagination(t *testing.T) {
 func TestDatabaseDeleteNeverClearsReplicas(t *testing.T) {
 	for _, all := range []bool{false, true} {
 		t.Run(map[bool]string{false: "listed", true: "all regions"}[all], func(t *testing.T) {
-			regions := `["fra-1"]`
+			regions := `["fra"]`
 			if all {
 				regions = `[]`
 			}
@@ -681,7 +681,7 @@ func TestDatabaseDeleteNeverClearsReplicas(t *testing.T) {
 			m := databaseState()
 			m.AllRegions = types.BoolValue(all)
 			if !all {
-				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra"})
 			}
 			var resp resource.DeleteResponse
 			r.Delete(t.Context(), resource.DeleteRequest{State: stateFor(t, r, m)}, &resp)

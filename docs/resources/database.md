@@ -14,8 +14,8 @@ resource "terrascale_database" "main" {
   organization_id = terrascale_project.app.organization_id
   project_id      = terrascale_project.app.id
   name            = "main"
-  home_region     = "gru-1"
-  replica_regions = ["fra-1"]
+  home_region     = "gru"
+  replica_regions = ["fra"]
 
   lifecycle {
     prevent_destroy = true
@@ -28,7 +28,7 @@ resource "terrascale_database" "main" {
 - `organization_id`, `project_id` (String, Required): canonical uppercase parent
   ULIDs. Parent changes replace the database.
 - `name` (String, Required): `^[a-z][a-z0-9_-]{0,62}$`. Changes replace the database.
-- `home_region` (String, Optional/Computed): region ID such as `gru-1`, selected by
+- `home_region` (String, Optional/Computed): region ID such as `gru`, selected by
   the API when omitted. Changes replace the database.
 - `replica_regions` (Set of String, Optional/Computed): complete replica region
   IDs. When both placement controls are omitted, creation accepts the API's

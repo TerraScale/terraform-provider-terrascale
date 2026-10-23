@@ -66,7 +66,7 @@ func (p *terraScaleProvider) Configure(ctx context.Context, req provider.Configu
 				return
 			}
 			c.management = m.WithToken(token)
-			c.exchange = tsauth.ExchangeConfig{ClientID: tsauth.CLIClientID, SubjectToken: func(context.Context) (string, error) { return token, nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}}
+			c.exchange = tsauth.ExchangeConfig{ClientID: "ts-cli", SubjectToken: func(context.Context) (string, error) { return token, nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}}
 		}
 	}
 	if !config.ProjectToken.IsUnknown() {

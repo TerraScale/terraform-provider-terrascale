@@ -56,7 +56,7 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 			if err := req.ParseForm(); err != nil {
 				t.Error(err)
 			}
-			want := map[string]string{"client_id": tsauth.CLIClientID, "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": "fixture.user.signature", "organization": orgID, "project": projectID, "scope": "databases:read databases:write"}
+			want := map[string]string{"client_id": "ts-cli", "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": "fixture.user.signature", "organization": orgID, "project": projectID, "scope": "databases:read databases:write"}
 			if req.Method != "POST" || len(req.Form) != len(want) {
 				t.Error("incorrect token exchange request")
 			}
@@ -137,7 +137,7 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 		t.Fatal(err)
 	}
 	return &clients{management: m.WithToken("fixture.user.signature"), data: c,
-		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: tsauth.CLIClientID, SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
+		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: "ts-cli", SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
 		databaseConfig: tb.Config{BaseURL: server.URL, HTTPClient: server.Client(), MaxRetries: -1},
 	}
 }
@@ -322,7 +322,7 @@ func TestKeyLifecyclePreservesSecretAcrossPaginatedRefresh(t *testing.T) {
 	r.Read(t.Context(), resource.ReadRequest{State: create.State}, &read)
 	noErrors(t, read.Diagnostics)
 	noErrors(t, read.State.Get(t.Context(), &m))
-	if m.Secret.ValueString() != "fixture-secret" || m.ID.ValueString() != keyID {
+	if m.Secret.ValueString() != "fixture-secret" || m.ID.ValueString() != keyID || m.DatabaseName.ValueString() != "main" {
 		t.Fatal("refresh lost secret or ID")
 	}
 	var deleted resource.DeleteResponse
@@ -646,6 +646,36 @@ func TestDatabaseImportLookupPagination(t *testing.T) {
 					if m.Name.ValueString() != "main" || m.ID.ValueString() != databaseID {
 						t.Fatal("imported identity was not resolved")
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestDatabaseDeleteNeverClearsReplicas(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(map[bool]string{false: "listed", true: "all regions"}[all], func(t *testing.T) {
+			regions := `["fra-1"]`
+			if all {
+				regions = `[]`
+			}
+			r := &databaseResource{clients: fakeClients(t,
+				step{method: "GET", path: databasePath, response: databaseJSON(all, regions)},
+				step{method: "DELETE", path: databasePath, status: 409, response: `{"error":{"code":"database_replicated","message":"fixture-secret"}}`},
+			)}
+			m := databaseState()
+			m.AllRegions = types.BoolValue(all)
+			if !all {
+				m.ReplicaRegions, _ = types.SetValueFrom(t.Context(), types.StringType, []string{"fra-1"})
+			}
+			var resp resource.DeleteResponse
+			r.Delete(t.Context(), resource.DeleteRequest{State: stateFor(t, r, m)}, &resp)
+			if !resp.Diagnostics.HasError() {
+				t.Fatal("replicated deletion failure ignored")
+			}
+			for _, d := range resp.Diagnostics {
+				if strings.Contains(d.Detail(), "fixture-secret") {
+					t.Fatal("server message leaked")
 				}
 			}
 		})

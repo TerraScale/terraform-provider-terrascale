@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
-	"terrascale.tech/sdk/tsauth"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"terrascale.tech/sdk/tsauth"
 )
 
 func dynamic(t *testing.T, state tfsdk.State) *tfprotov6.DynamicValue {
@@ -102,7 +102,7 @@ func TestConfigureCredentials(t *testing.T) {
 				}
 				if tc.access != "" {
 					token, err := c.exchange.SubjectToken(t.Context())
-					if err != nil || token != tc.access || c.exchange.ClientID != tsauth.CLIClientID || !slices.Equal(c.exchange.Scopes, []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}) {
+					if err != nil || token != tc.access || c.exchange.ClientID != "ts-cli" || !slices.Equal(c.exchange.Scopes, []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}) {
 						t.Fatal("incorrect user exchange configuration")
 					}
 				}

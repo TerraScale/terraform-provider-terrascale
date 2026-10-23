@@ -5,7 +5,9 @@ description: "Manage a TerraScale database and its replica placement."
 
 # terrascale_database (Resource)
 
-Requires the provider's user `access_token`. Replacement and deletion remove data.
+Requires the provider's ts-cli user `access_token`. The provider exchanges it
+for a project token with only `databases:read` and `databases:write` and uses
+public database routes addressed by name. Replacement and deletion remove data.
 
 ```terraform
 resource "terrascale_database" "main" {
@@ -47,6 +49,11 @@ resource "terrascale_database" "main" {
 The provider preserves backend errors, including refusal to delete replicated
 databases. It never automatically removes replicas to make destruction succeed.
 
+Refresh removes state if the name now belongs to a different database ID.
+Updates and deletions refuse an ID mismatch before modifying the database.
+The check and mutation are separate requests; avoid concurrent external database
+recreation during apply/destroy.
+
 ## Import
 
 Use `organization_id/project_id/database_id`, all plain ULIDs:
@@ -54,6 +61,9 @@ Use `organization_id/project_id/database_id`, all plain ULIDs:
 ```sh
 terraform import terrascale_database.main 01ARZ3NDEKTSV4RRFFQ69G5FAV/01ARZ3NDEKTSV4RRFFQ69G5FAW/01ARZ3NDEKTSV4RRFFQ69G5FAX
 ```
+
+Import resolves the database ULID to its current name through the public project
+database list, including pagination. It never adopts another database by name.
 
 Omitted placement preserves the imported home region, replica list and all-region
 setting. Explicit placement configuration remains managed and must match the

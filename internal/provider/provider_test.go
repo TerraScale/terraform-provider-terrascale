@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"terrascale.tech/sdk/tsauth"
 )
 
 func dynamic(t *testing.T, state tfsdk.State) *tfprotov6.DynamicValue {
@@ -66,6 +68,8 @@ func TestConfigureCredentials(t *testing.T) {
 		{name: "environment", access: "fixture.user.signature", project: "fixture.project.signature", env: true, valid: true},
 		{name: "invalid user token", access: "fixture\nsecret", valid: false},
 		{name: "invalid project token", project: "fixture-secret", valid: false},
+		{name: "legacy key", project: "tb_" + strings.Repeat("a", 43), valid: false},
+		{name: "public key", project: keyID + "_" + strings.Repeat("a", 52), valid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("TERRASCALE_ACCESS_TOKEN", "")
@@ -97,6 +101,12 @@ func TestConfigureCredentials(t *testing.T) {
 				c, ok := resp.ResourceData.(*clients)
 				if !ok {
 					t.Fatal("missing clients")
+				}
+				if tc.access != "" {
+					token, err := c.exchange.SubjectToken(t.Context())
+					if err != nil || token != tc.access || c.exchange.ClientID != "00000000000000000000000007" || !slices.Equal(c.exchange.Scopes, []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}) {
+						t.Fatal("incorrect user exchange configuration")
+					}
 				}
 				if (c.management != nil) != (tc.access != "") || (c.data != nil) != (tc.project != "") {
 					t.Fatal("wrong credential routing")
@@ -138,6 +148,16 @@ func TestResourceConfigValidation(t *testing.T) {
 				t.Fatalf("unexpected validation: %v", resp.Diagnostics)
 			}
 		})
+	}
+	for _, name := range []string{"main", "../main", ""} {
+		m := keyState(t)
+		m.ID = types.StringNull()
+		m.Secret = types.StringNull()
+		m.DatabaseName = types.StringValue(name)
+		resp, err := server.ValidateResourceConfig(t.Context(), &tfprotov6.ValidateResourceConfigRequest{TypeName: "terrascale_api_key", Config: dynamic(t, stateFor(t, &apiKeyResource{}, m))})
+		if err != nil || protocolErrors(resp.Diagnostics) == (name == "main") {
+			t.Fatalf("incorrect database name validation: %v %v", err, resp.Diagnostics)
+		}
 	}
 	for _, scopes := range [][]string{{"documents:read"}, {}, {"admin"}} {
 		t.Run("scopes "+strings.Join(scopes, ","), func(t *testing.T) {
@@ -261,7 +281,7 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 	for _, mode := range []string{"server-selected", "explicit replicas", "explicit replicas with omitted mode"} {
 		t.Run(mode, func(t *testing.T) {
 			explicit := mode != "server-selected"
-			body := `{"name":"main"}`
+			body := `{"name":"main","replicaRegions":null}`
 			config := databaseConfig()
 			if explicit {
 				config.HomeRegion = types.StringValue("gru-1")
@@ -271,7 +291,7 @@ func TestDatabaseProtocolPlacement(t *testing.T) {
 				}
 				body = `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`
 			}
-			server := placementServer(t, fakeClients(t, step{method: "POST", path: projectPath + "/databases", body: body, response: databaseJSON(false, `["fra-1"]`), status: 201}))
+			server := placementServer(t, fakeClients(t, step{method: "POST", path: databasesPath, body: body, response: databaseJSON(false, `["fra-1"]`), status: 201}))
 			null := dynamic(t, emptyState(t, &databaseResource{}))
 			cfg := dynamic(t, stateFor(t, &databaseResource{}, config))
 			plan, err := server.PlanResourceChange(t.Context(), &tfprotov6.PlanResourceChangeRequest{TypeName: "terrascale_database", PriorState: null, Config: cfg, ProposedNewState: cfg})
@@ -314,7 +334,7 @@ func TestDatabaseProtocolImportPreservesOmittedPlacement(t *testing.T) {
 			if all {
 				regions = `[]`
 			}
-			server := placementServer(t, fakeClients(t, step{method: "GET", path: databasePath, response: databaseJSON(all, regions)}))
+			server := placementServer(t, fakeClients(t, step{method: "GET", path: databasesPath + "?limit=100", response: `{"items":[` + databaseJSON(all, regions) + `],"next":""}`}, step{method: "GET", path: databasePath, response: databaseJSON(all, regions)}))
 			imported, err := server.ImportResourceState(t.Context(), &tfprotov6.ImportResourceStateRequest{TypeName: "terrascale_database", ID: orgID + "/" + projectID + "/" + databaseID})
 			if err != nil || protocolErrors(imported.Diagnostics) || len(imported.ImportedResources) != 1 {
 				t.Fatalf("import failed: %v %v", err, imported.Diagnostics)
@@ -350,7 +370,7 @@ func TestDatabaseProtocolPlacementUpdates(t *testing.T) {
 		{name: "explicit empty clears replicas", priorRegions: `["fra-1"]`, replicas: []string{}, all: types.BoolNull(), body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := fakeClients(t, step{method: "PATCH", path: databasePath, body: tc.body, response: tc.response})
+			c := fakeClients(t, step{method: "GET", path: databasePath, response: databaseJSON(tc.priorAll, tc.priorRegions)}, step{method: "PATCH", path: databasePath, body: tc.body, response: tc.response})
 			server := placementServer(t, c)
 			prior := databaseState()
 			prior.AllRegions = types.BoolValue(tc.priorAll)

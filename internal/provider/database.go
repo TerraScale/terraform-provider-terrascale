@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -86,10 +88,22 @@ func (r *databaseResource) Create(ctx context.Context, req resource.CreateReques
 			resp.Diagnostics.AddError("Empty creation placement", "Omit replica_regions to accept server placement, name at least one replica, or set all_regions=true. An explicit empty replica set is supported only for updates or all-region placement.")
 		}
 	}
+	if m.AllRegions.ValueBool() && len(regions) > 0 {
+		resp.Diagnostics.AddError("Conflicting placement", "all_regions=true requires replica_regions to be empty.")
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	p, err := r.clients.management.CreateDatabaseIn(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), m.Name.ValueString(), tb.Placement{HomeRegion: m.HomeRegion.ValueString(), ReplicaRegions: regions, AllRegions: m.AllRegions.ValueBool()})
+	if m.AllRegions.ValueBool() {
+		// The public API rejects any nonnull replica list with all-region creation.
+		regions = nil
+	}
+	db, err := m.database(ctx, r.clients)
+	if err != nil {
+		apiError(&resp.Diagnostics, "Initialize database client", err)
+		return
+	}
+	p, err := db.CreateIn(ctx, tb.Placement{HomeRegion: m.HomeRegion.ValueString(), ReplicaRegions: regions, AllRegions: m.AllRegions.ValueBool()})
 	if err != nil {
 		apiError(&resp.Diagnostics, "Create database", err)
 		return
@@ -103,13 +117,21 @@ func (r *databaseResource) Read(ctx context.Context, req resource.ReadRequest, r
 	if resp.Diagnostics.HasError() || !requireManagement(r.clients, &resp.Diagnostics) {
 		return
 	}
-	p, err := r.clients.management.Database(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), m.ID.ValueString())
+	db, err := m.database(ctx, r.clients)
+	var p *tb.ManagedDatabase
+	if err == nil {
+		p, err = db.Info(ctx)
+	}
 	if notFound(err) {
 		resp.State.RemoveResource(ctx)
 		return
 	}
 	if err != nil {
 		apiError(&resp.Diagnostics, "Read database", err)
+		return
+	}
+	if !m.ID.IsNull() && m.ID.ValueString() != p.ID {
+		resp.State.RemoveResource(ctx)
 		return
 	}
 	m.apply(ctx, p)
@@ -121,15 +143,31 @@ func (r *databaseResource) Update(ctx context.Context, req resource.UpdateReques
 	if resp.Diagnostics.HasError() || !requireManagement(r.clients, &resp.Diagnostics) {
 		return
 	}
+	var prior databaseModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	db, err := prior.database(ctx, r.clients)
+	if err != nil {
+		apiError(&resp.Diagnostics, "Read database before update", err)
+		return
+	}
+	current, err := db.Info(ctx)
+	if err != nil {
+		apiError(&resp.Diagnostics, "Read database before update", err)
+		return
+	}
+	if current.ID != prior.ID.ValueString() {
+		resp.Diagnostics.AddError("Database identity changed", "The database at this name has a different ID. Refresh state before updating placement.")
+		return
+	}
 	var p *tb.ManagedDatabase
-	var err error
 	if m.AllRegions.ValueBool() {
-		p, err = r.clients.management.SetDatabaseAllRegions(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), m.ID.ValueString())
+		p, err = db.SetAllRegions(ctx)
 	} else {
 		replicas := m.ReplicaRegions
 		if replicas.IsUnknown() || replicas.IsNull() {
-			var prior databaseModel
-			resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
 			replicas = prior.ReplicaRegions
 		}
 		var regions []string
@@ -137,7 +175,7 @@ func (r *databaseResource) Update(ctx context.Context, req resource.UpdateReques
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		p, err = r.clients.management.SetDatabaseRegions(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), m.ID.ValueString(), regions)
+		p, err = db.SetRegions(ctx, regions)
 	}
 	if err != nil {
 		apiError(&resp.Diagnostics, "Update database regions", err)
@@ -152,11 +190,65 @@ func (r *databaseResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() || !requireManagement(r.clients, &resp.Diagnostics) {
 		return
 	}
-	err := r.clients.management.DeleteDatabase(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), m.ID.ValueString())
+	db, err := m.database(ctx, r.clients)
+	if notFound(err) {
+		return
+	}
+	if err != nil {
+		apiError(&resp.Diagnostics, "Read database before deletion", err)
+		return
+	}
+	current, err := db.Info(ctx)
+	if notFound(err) {
+		return
+	}
+	if err != nil {
+		apiError(&resp.Diagnostics, "Read database before deletion", err)
+		return
+	}
+	if current.ID != m.ID.ValueString() {
+		resp.Diagnostics.AddError("Database identity changed", "The database at this name has a different ID. Refresh state before deletion.")
+		return
+	}
+	// shortcut: identity check and name-based delete are separate; use conditional delete when the SDK supports it.
+	err = db.Delete(ctx)
 	if err != nil && !notFound(err) {
 		apiError(&resp.Diagnostics, "Delete database (clear replicas first)", err)
 	}
 }
 func (r *databaseResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	setImport(ctx, req.ID, resp, "organization_id", "project_id", "resource_id")
+}
+
+func (m *databaseModel) database(ctx context.Context, c *clients) (*tb.Database, error) {
+	client, err := c.project(m.OrganizationID.ValueString(), m.ProjectID.ValueString())
+	if err != nil {
+		return nil, err
+	}
+	if !m.Name.IsNull() && !m.Name.IsUnknown() {
+		return client.Database(m.ProjectID.ValueString(), m.Name.ValueString()), nil
+	}
+	// Imports retain their ULID identity; public database routes require a name.
+	seen := map[string]bool{}
+	after := ""
+	for {
+		page, err := client.Databases(ctx, m.ProjectID.ValueString(), tb.PageOptions{Limit: 100, After: after})
+		if err != nil {
+			return nil, err
+		}
+		for _, db := range page.Items {
+			if db.ID == m.ID.ValueString() {
+				m.Name = types.StringValue(db.Name)
+				return client.Database(m.ProjectID.ValueString(), db.Name), nil
+			}
+		}
+		if page.Next == "" {
+			return nil, &tb.APIError{Status: http.StatusNotFound}
+		}
+		if seen[page.Next] {
+			return nil, errors.New("repeated database pagination cursor")
+		}
+		seen[page.Next] = true
+		after = page.Next
+	}
 }

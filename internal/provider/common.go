@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"terrascale.tech/sdk/tsauth"
 	tb "terrascale.tech/sdk/v1"
 )
 
@@ -90,14 +91,29 @@ func requireData(c *clients, d *diag.Diagnostics) bool {
 }
 func notFound(err error) bool {
 	var api *tb.APIError
-	return errors.As(err, &api) && api.Status == http.StatusNotFound
+	var auth *tsauth.APIError
+	return (errors.As(err, &api) && api.Status == http.StatusNotFound) || (errors.As(err, &auth) && auth.Status == http.StatusNotFound)
 }
 func apiError(d *diag.Diagnostics, operation string, err error) {
 	// Server messages and transport errors can contain credentials or response bodies.
 	detail := "Request failed. Check credentials, permissions and service availability. An interrupted mutation may have committed; inspect or import the resource before retrying."
 	var api *tb.APIError
-	if errors.As(err, &api) {
-		detail = fmt.Sprintf("TerraScale returned HTTP %d. Check permissions and the requested resource. An uncertain mutation may require importing the resource before retrying.", api.Status)
+	var auth *tsauth.APIError
+	var token *tsauth.Error
+	status := 0
+	switch {
+	case errors.As(err, &api):
+		status = api.Status
+	case errors.As(err, &auth):
+		status = auth.Status
+	case errors.As(err, &token):
+		status = token.Status
+	}
+	if status != 0 {
+		detail = fmt.Sprintf("TerraScale returned HTTP %d. Check permissions and the requested resource. An uncertain mutation may require importing the resource before retrying.", status)
+	}
+	if status == http.StatusUnauthorized || (token != nil && (token.Code == "invalid_grant" || token.Code == "invalid_token")) {
+		detail = "The user or project access token expired or was rejected. Supply a current ts-auth user access token for access_token, or replace project_token for collections, and retry. Token values and server details are omitted."
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		detail = "Request canceled or timed out. A mutation may have committed; inspect or import the resource before retrying."

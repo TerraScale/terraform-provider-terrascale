@@ -3,7 +3,10 @@
 Manage projects, databases, collections and project API keys with the
 [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)
 and the public [`terrascale.tech/sdk v0.0.1`](https://pkg.go.dev/terrascale.tech/sdk@v0.0.1).
-The provider always uses `https://api.terrascale.tech`.
+Projects and API keys use `https://auth.terrascale.tech/v1/terrascale`.
+Databases use the public `https://api.terrascale.tech/v1/projects` API with a
+cached project token exchanged from the existing ts-cli user access token.
+The exchange requests only `databases:read` and `databases:write`.
 
 This source prepares the initial **0.0.1** release. Registry
 publication still requires user setup; the Registry installation below becomes
@@ -40,7 +43,7 @@ resource "terrascale_database" "main" {
 
 ## Credentials and state
 
-- `TERRASCALE_ACCESS_TOKEN`: existing **ts-auth user access token**, used by
+- `TERRASCALE_ACCESS_TOKEN`: existing **ts-cli user access token from ts-auth**, used by
   project, database and API-key management. An organization ID is not a credential.
   Never use an internal peer credential.
 - `TERRASCALE_PROJECT_TOKEN`: existing **project API key or project access token**,
@@ -79,10 +82,11 @@ Database and collection replacement/deletion destroys data. Use
 cleared before deletion; the provider does not clear them automatically. A project
 must contain no databases before deletion.
 
-Collection routes address names. The provider checks the collection ID before
-deletion and refuses a different identity, but the API has no conditional drop:
-concurrent deletion/recreation between that check and drop cannot be prevented.
-Avoid concurrent external collection lifecycle changes during apply/destroy.
+Database and collection routes address names. Refresh never adopts a different
+ID at the same name; database placement updates and both resources' deletions
+verify identity first. The API has no conditional delete: concurrent
+deletion/recreation between the check and mutation cannot be prevented. Avoid
+concurrent external lifecycle changes during apply/destroy.
 
 Refresh removes resources on HTTP 404 and removes revoked keys absent from a full
 paginated key list. Other errors preserve state and fail. A management 404 can
@@ -103,7 +107,8 @@ nice -n 19 go build ./...
 ```
 
 Tests use `httptest` HTTP fakes only: no TerraBase binary or production credentials.
-They cover CRUD, pagination, 404 removal, permission errors, cancellation, imports,
+They cover public auth/API routes, token exchange, CRUD, pagination, 404 removal,
+permission and expired-token errors, cancellation, imports,
 secret preservation, schema validation and replacement planning. GitHub CI's
 `test` check also validates six unsigned release archives and the protocol manifest.
 CI is the gate; a local test run is not required before pushing.

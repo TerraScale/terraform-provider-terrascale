@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"terrascale.tech/sdk/tsauth"
 	tb "terrascale.tech/sdk/v1"
 )
 
@@ -27,9 +28,10 @@ const (
 	databaseID     = "01ARZ3NDEKTSV4RRFFQ69G5FAX"
 	collectionID   = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
 	keyID          = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
-	managementPath = "/v1/management/organizations/" + orgID + "/projects"
+	managementPath = "/v1/terrascale/organizations/" + orgID + "/projects"
 	projectPath    = managementPath + "/" + projectID
-	databasePath   = projectPath + "/databases/" + databaseID
+	databasesPath  = "/v1/projects/" + projectID + "/databases"
+	databasePath   = databasesPath + "/main"
 	collectionPath = "/v1/projects/" + projectID + "/databases/main/collections/users"
 )
 
@@ -42,9 +44,38 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 	t.Helper()
 	var mu sync.Mutex
 	index := 0
+	exchanges := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
+		if req.URL.Path == "/terrascale/oauth/token" {
+			exchanges++
+			if exchanges > 1 {
+				t.Error("project exchange source was not reused")
+			}
+			if err := req.ParseForm(); err != nil {
+				t.Error(err)
+			}
+			want := map[string]string{"client_id": tsauth.CLIClientID, "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": "fixture.user.signature", "organization": orgID, "project": projectID, "scope": "databases:read databases:write"}
+			if req.Method != "POST" || len(req.Form) != len(want) {
+				t.Error("incorrect token exchange request")
+			}
+			for field, value := range want {
+				if req.Form.Get(field) != value {
+					t.Errorf("incorrect exchange field %s", field)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if index < len(steps) && steps[index].path == req.URL.Path {
+				s := steps[index]
+				index++
+				w.WriteHeader(s.status)
+				_, _ = io.WriteString(w, s.response)
+				return
+			}
+			_, _ = io.WriteString(w, `{"access_token":"fixture.exchanged.signature","token_type":"Bearer","expires_in":3600}`)
+			return
+		}
 		if index >= len(steps) {
 			t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
 			w.WriteHeader(500)
@@ -55,8 +86,15 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 		if req.Method != s.method || req.URL.RequestURI() != s.path {
 			t.Errorf("request %d: got %s %s, want %s %s", index, req.Method, req.URL.RequestURI(), s.method, s.path)
 		}
-		if req.Header.Get("Authorization") == "" {
-			t.Error("missing authorization")
+		authorization := "Bearer fixture.user.signature"
+		if strings.HasPrefix(req.URL.Path, databasesPath) {
+			authorization = "Bearer fixture.exchanged.signature"
+			if strings.Contains(req.URL.Path, "/collections") {
+				authorization = "Bearer fixture.project.signature"
+			}
+		}
+		if req.Header.Get("Authorization") != authorization {
+			t.Error("incorrect authorization for public route")
 		}
 		body, err := io.ReadAll(req.Body)
 		if err != nil {
@@ -90,7 +128,7 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 			t.Errorf("sent %d requests, want %d", index, len(steps))
 		}
 	})
-	m, err := tb.NewManagement(tb.Config{BaseURL: server.URL, HTTPClient: server.Client(), MaxRetries: -1})
+	m, err := tsauth.New(tsauth.Config{Issuer: server.URL + "/terrascale", HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +136,10 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &clients{management: m.WithToken("fixture.user.signature"), data: c}
+	return &clients{management: m.WithToken("fixture.user.signature"), data: c,
+		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: tsauth.CLIClientID, SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
+		databaseConfig: tb.Config{BaseURL: server.URL, HTTPClient: server.Client(), MaxRetries: -1},
+	}
 }
 func schemaFor(t *testing.T, r resource.Resource) schema.Schema {
 	t.Helper()
@@ -131,14 +172,14 @@ func noErrors(t *testing.T, d diag.Diagnostics) {
 	}
 }
 func projectJSON(name string) string {
-	return `{"id":"` + projectID + `","organizationId":"` + orgID + `","name":"` + name + `"}`
+	return `{"id":"` + projectID + `","organization_id":"` + orgID + `","created_by":"` + collectionID + `","name":"` + name + `"}`
 }
 func databaseJSON(all bool, regions string) string {
 	return `{"id":"` + databaseID + `","projectId":"` + projectID + `","name":"main","homeRegion":"gru-1","replicaRegions":` + regions + `,"allRegions":` + map[bool]string{true: "true", false: "false"}[all] + `}`
 }
 func collectionJSON(id string) string { return `{"id":"` + id + `","name":"users","created_at":"1"}` }
 func keyJSON() string {
-	return `{"id":"` + keyID + `","projectId":"` + projectID + `","name":"reader","scopes":["documents:read"],"databaseId":"` + databaseID + `"}`
+	return `{"id":"` + keyID + `","organization_id":"` + orgID + `","project_id":"` + projectID + `","created_by":"` + collectionID + `","name":"reader","scopes":["documents:read"],"database":"main"}`
 }
 func projectState() projectModel {
 	return projectModel{ID: types.StringValue(projectID), OrganizationID: types.StringValue(orgID), Name: types.StringValue("app")}
@@ -153,7 +194,7 @@ func keyState(t *testing.T) apiKeyModel {
 	t.Helper()
 	scopes, d := types.SetValueFrom(t.Context(), types.StringType, []string{"documents:read"})
 	noErrors(t, d)
-	return apiKeyModel{ID: types.StringValue(keyID), OrganizationID: types.StringValue(orgID), ProjectID: types.StringValue(projectID), Name: types.StringValue("reader"), DatabaseID: types.StringValue(databaseID), Scopes: scopes, Secret: types.StringValue("fixture-secret")}
+	return apiKeyModel{ID: types.StringValue(keyID), OrganizationID: types.StringValue(orgID), ProjectID: types.StringValue(projectID), Name: types.StringValue("reader"), DatabaseName: types.StringValue("main"), Scopes: scopes, Secret: types.StringValue("fixture-secret")}
 }
 
 func TestProjectLifecycle(t *testing.T) {
@@ -191,11 +232,15 @@ func TestProjectLifecycle(t *testing.T) {
 }
 func TestDatabaseLifecycle(t *testing.T) {
 	r := &databaseResource{clients: fakeClients(t,
-		step{method: "POST", path: projectPath + "/databases", body: `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`), status: 201},
+		step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`), status: 201},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
 		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
 		step{method: "PATCH", path: databasePath, body: `{"allRegions":true}`, response: databaseJSON(true, `[]`)},
+		step{method: "GET", path: databasePath, response: databaseJSON(true, `[]`)},
 		step{method: "PATCH", path: databasePath, body: `{"replicaRegions":["fra-1"]}`, response: databaseJSON(false, `["fra-1"]`)},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `["fra-1"]`)},
 		step{method: "PATCH", path: databasePath, body: `{"replicaRegions":[]}`, response: databaseJSON(false, `[]`)},
+		step{method: "GET", path: databasePath, response: databaseJSON(false, `[]`)},
 		step{method: "DELETE", path: databasePath, status: 204},
 	)}
 	m := databaseState()
@@ -259,7 +304,7 @@ func TestCollectionLifecycle(t *testing.T) {
 }
 func TestKeyLifecyclePreservesSecretAcrossPaginatedRefresh(t *testing.T) {
 	r := &apiKeyResource{clients: fakeClients(t,
-		step{method: "POST", path: projectPath + "/api-keys", body: `{"name":"reader","scopes":["documents:read"],"databaseId":"` + databaseID + `"}`, response: `{"key":` + keyJSON() + `,"secret":"fixture-secret"}`, status: 201},
+		step{method: "POST", path: projectPath + "/api-keys", body: `{"name":"reader","scopes":["documents:read"],"database":"main"}`, response: `{"api_key":` + keyJSON() + `,"key":"fixture-secret"}`, status: 201},
 		step{method: "GET", path: projectPath + "/api-keys?limit=100", response: `{"items":[],"next":"` + projectID + `"}`},
 		step{method: "GET", path: projectPath + "/api-keys?after=" + projectID + "&limit=100", response: `{"items":[` + keyJSON() + `],"next":""}`},
 		step{method: "DELETE", path: projectPath + "/api-keys/" + keyID, status: 204},
@@ -333,7 +378,7 @@ func TestDeleteMissingIsIdempotent(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			method := "DELETE"
 			route := map[string]string{"project": projectPath, "database": databasePath, "collection": collectionPath, "api_key": projectPath + "/api-keys/" + keyID}[kind]
-			if kind == "collection" {
+			if kind == "collection" || kind == "database" {
 				method = "GET"
 			}
 			c := fakeClients(t, step{method: method, path: route, status: 404, response: `{"error":{"code":"not_found"}}`})
@@ -469,7 +514,7 @@ func TestImports(t *testing.T) {
 }
 
 func TestCreatedKeyWithoutSecretRetainsRevocableIdentity(t *testing.T) {
-	r := &apiKeyResource{clients: fakeClients(t, step{method: "POST", path: projectPath + "/api-keys", response: `{"key":` + keyJSON() + `}`, status: 201})}
+	r := &apiKeyResource{clients: fakeClients(t, step{method: "POST", path: projectPath + "/api-keys", response: `{"api_key":` + keyJSON() + `}`, status: 201})}
 	m := keyState(t)
 	m.ID = types.StringUnknown()
 	m.Secret = types.StringUnknown()
@@ -496,7 +541,7 @@ func TestDatabaseEmptyCreationPlacementFailsBeforeMutation(t *testing.T) {
 }
 
 func TestDatabaseAllRegionsCreationAllowsEmptyReplicaSet(t *testing.T) {
-	r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: projectPath + "/databases", body: `{"name":"main","homeRegion":"gru-1","allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
+	r := &databaseResource{clients: fakeClients(t, step{method: "POST", path: databasesPath, body: `{"name":"main","homeRegion":"gru-1","replicaRegions":[],"allRegions":true}`, response: databaseJSON(true, `[]`), status: 201})}
 	m := databaseState()
 	m.ID = types.StringUnknown()
 	m.AllRegions = types.BoolValue(true)
@@ -506,5 +551,103 @@ func TestDatabaseAllRegionsCreationAllowsEmptyReplicaSet(t *testing.T) {
 	noErrors(t, resp.State.Get(t.Context(), &m))
 	if !m.AllRegions.ValueBool() || len(m.ReplicaRegions.Elements()) != 0 {
 		t.Fatal("explicit all-region placement not retained")
+	}
+}
+
+func TestDatabaseDoesNotAdoptOrMutateRecreatedName(t *testing.T) {
+	for _, operation := range []string{"read", "update", "delete"} {
+		t.Run(operation, func(t *testing.T) {
+			r := &databaseResource{clients: fakeClients(t, step{method: "GET", path: databasePath, response: strings.Replace(databaseJSON(false, `[]`), databaseID, keyID, 1)})}
+			state := stateFor(t, r, databaseState())
+			switch operation {
+			case "read":
+				resp := resource.ReadResponse{State: state}
+				r.Read(t.Context(), resource.ReadRequest{State: state}, &resp)
+				noErrors(t, resp.Diagnostics)
+				if !resp.State.Raw.IsNull() {
+					t.Fatal("adopted recreated database")
+				}
+			case "update":
+				resp := resource.UpdateResponse{State: state}
+				r.Update(t.Context(), resource.UpdateRequest{State: state, Plan: planFor(t, r, databaseState())}, &resp)
+				if !resp.Diagnostics.HasError() || !resp.State.Raw.Equal(state.Raw) {
+					t.Fatal("changed recreated database")
+				}
+			case "delete":
+				var resp resource.DeleteResponse
+				r.Delete(t.Context(), resource.DeleteRequest{State: state}, &resp)
+				if !resp.Diagnostics.HasError() {
+					t.Fatal("deleted recreated database")
+				}
+			}
+		})
+	}
+}
+
+func TestExpiredUserTokenPreservesStateAndRedactsDiagnostics(t *testing.T) {
+	for _, kind := range []string{"project", "database"} {
+		t.Run(kind, func(t *testing.T) {
+			var r resource.Resource
+			var model any
+			if kind == "project" {
+				r = &projectResource{clients: fakeClients(t, step{method: "GET", path: projectPath, status: 401, response: `{"error":{"code":"invalid_token","message":"fixture.user.signature"}}`})}
+				model = projectState()
+			} else {
+				r = &databaseResource{clients: fakeClients(t, step{method: "POST", path: "/terrascale/oauth/token", status: 400, response: `{"error":"invalid_grant","error_description":"fixture.user.signature"}`})}
+				model = databaseState()
+			}
+			state := stateFor(t, r, model)
+			resp := resource.ReadResponse{State: state}
+			r.Read(t.Context(), resource.ReadRequest{State: state}, &resp)
+			if !resp.Diagnostics.HasError() || !resp.State.Raw.Equal(state.Raw) {
+				t.Fatal("expired token did not preserve state with error")
+			}
+			for _, d := range resp.Diagnostics {
+				if strings.Contains(d.Detail(), "fixture") || !strings.Contains(d.Detail(), "current ts-auth user access token") {
+					t.Fatal("expired-token diagnostic is unsafe or not actionable")
+				}
+			}
+		})
+	}
+}
+
+func TestDatabaseImportLookupPagination(t *testing.T) {
+	for _, mode := range []string{"found", "absent", "repeated cursor"} {
+		t.Run(mode, func(t *testing.T) {
+			steps := []step{{method: "GET", path: databasesPath + "?limit=100", response: `{"items":[],"next":"` + projectID + `"}`}}
+			response := `{"items":[],"next":""}`
+			if mode == "found" {
+				response = `{"items":[` + databaseJSON(false, `[]`) + `],"next":""}`
+			}
+			if mode == "repeated cursor" {
+				response = steps[0].response
+			}
+			steps = append(steps, step{method: "GET", path: databasesPath + "?after=" + projectID + "&limit=100", response: response})
+			if mode == "found" {
+				steps = append(steps, step{method: "GET", path: databasePath, response: databaseJSON(false, `[]`)})
+			}
+			r := &databaseResource{clients: fakeClients(t, steps...)}
+			m := databaseState()
+			m.Name = types.StringNull()
+			state := stateFor(t, r, m)
+			resp := resource.ReadResponse{State: state}
+			r.Read(t.Context(), resource.ReadRequest{State: state}, &resp)
+			if mode == "repeated cursor" {
+				if !resp.Diagnostics.HasError() || !resp.State.Raw.Equal(state.Raw) {
+					t.Fatal("broken lookup did not preserve state with error")
+				}
+			} else {
+				noErrors(t, resp.Diagnostics)
+				if resp.State.Raw.IsNull() != (mode == "absent") {
+					t.Fatal("incorrect imported identity lookup")
+				}
+				if mode == "found" {
+					noErrors(t, resp.State.Get(t.Context(), &m))
+					if m.Name.ValueString() != "main" || m.ID.ValueString() != databaseID {
+						t.Fatal("imported identity was not resolved")
+					}
+				}
+			}
+		})
 	}
 }

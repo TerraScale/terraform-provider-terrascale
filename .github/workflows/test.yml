@@ -5,6 +5,8 @@ on:
     branches: [main]
 permissions:
   contents: read
+env:
+  GOTOOLCHAIN: local
 jobs:
   test:
     name: test
@@ -15,7 +17,18 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.25.0'
+          go-version-file: .go-version
+      - name: Cache advisory scanner
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/terrascale/govulncheck
+          key: ${{ runner.os }}-${{ runner.arch }}-govulncheck-v1.9.0-${{ hashFiles('.go-version') }}
+      - name: Install pinned advisory scanner
+        run: bash scripts/install-govulncheck.sh
+      - name: Check module advisories and source reachability
+        run: |
+          govulncheck -scan=module -show=verbose
+          govulncheck -test -show=verbose ./...
       - run: go test ./...
       - run: go build ./...
       - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6

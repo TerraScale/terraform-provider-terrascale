@@ -30,5 +30,5 @@ Use `organization_id/project_id`, both plain ULIDs:
 terraform import terrascale_project.app 01ARZ3NDEKTSV4RRFFQ69G5FAV/01ARZ3NDEKTSV4RRFFQ69G5FAW
 ```
 
-Refresh removes state on HTTP 404, including membership loss hidden by the API.
+Refresh removes state on HTTP 404 `not_found`, including membership loss hidden by the API.
 Verify access before applying a recreation plan.

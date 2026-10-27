@@ -2,7 +2,10 @@
 
 Manage projects, databases, collections and project API keys with the
 [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)
-and the public [`terrascale.tech/sdk v0.0.1`](https://pkg.go.dev/terrascale.tech/sdk@v0.0.1).
+and the public [`terrascale.tech/sdk v0.0.6`](https://pkg.go.dev/terrascale.tech/sdk@v0.0.6).
+Every SDK request is bounded: 10 s dial and TLS handshake, 30 s response
+headers and a 30 s deadline per operation including retries, so a stalled
+connection fails the apply instead of hanging it.
 Projects and API keys use `https://auth.terrascale.tech/v1/terrascale`.
 Databases use the public `https://api.terrascale.tech/v1/projects` API with a
 cached project token exchanged from the existing ts-cli user access token.
@@ -93,8 +96,13 @@ verify identity first. The API has no conditional delete: concurrent
 deletion/recreation between the check and mutation cannot be prevented. Avoid
 concurrent external lifecycle changes during apply/destroy.
 
-Refresh removes resources on HTTP 404 and removes revoked keys absent from a full
-paginated key list. Other errors preserve state and fail. A management 404 can
+Refresh removes resources only on a typed not-found 404 (`unknown_database`,
+`unknown_collection` or ts-auth `not_found`) and removes revoked keys absent
+from a full paginated key list. Other errors, including a 404 `unknown_route`
+or an untyped proxy 404, preserve state and fail. Error diagnostics name the
+HTTP status, the validated error code with guidance, Retry-After and the
+request ID; server messages and credentials are omitted. A data-plane 404
+`unknown_database` also answers a `project_token` for a different project. A management 404 can
 also mean that the user lost organization membership; verify access before
 applying a resulting recreation plan. Import configuration must match the live
 resource before applying. Omitted placement is computed: new databases accept the

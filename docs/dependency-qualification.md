@@ -2,8 +2,8 @@
 
 The provider's minimum Go version is **1.26.0**, required by the patched x/net,
 x/sys and x/text modules. This minimum is a source compatibility floor, not a
-release compiler selection. The published `terrascale.tech/sdk v0.0.1` dependency
-is unchanged; its own minimum Go version is not the provider release compiler.
+release compiler selection. The published `terrascale.tech/sdk v0.0.6` dependency's
+own minimum Go version is not the provider release compiler.
 Both CI and release use the exact **1.27.3** compiler in `.go-version`.
 This supersedes the older Go 1.25.0 preparation instructions in `release.md`.
 

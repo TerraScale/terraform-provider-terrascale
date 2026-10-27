@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0
-	terrascale.tech/sdk v0.0.1
+	terrascale.tech/sdk v0.0.6
 )
 
 require (
@@ -29,7 +29,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	// Security pin for the upstream test graph (GO-2026-6505); retain when tidying.
 	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect

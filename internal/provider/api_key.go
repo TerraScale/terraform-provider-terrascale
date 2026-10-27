@@ -69,16 +69,10 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 		apiError(&resp.Diagnostics, "Create API key", err)
 		return
 	}
+	// The SDK refuses a created key without its one-time secret as a contract error.
 	m.apply(ctx, p.APIKey)
 	m.Secret = types.StringValue(p.Key)
-	if p.Key == "" {
-		m.Secret = types.StringNull()
-	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
-	if p.Key == "" {
-		resp.Diagnostics.AddError("Created key has no secret", "The API created a key but returned no secret. Its ID is retained in state. Revoke or replace it deliberately; the existing secret cannot be recovered.")
-		return
-	}
 	resp.Diagnostics.AddWarning("API key secret stored in state", "Sensitive hides display only. Protect state and plan files with encryption and restricted access; the server never returns this secret again.")
 }
 func (r *apiKeyResource) find(ctx context.Context, m apiKeyModel) (*tsauth.APIKey, error) {

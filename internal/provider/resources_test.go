@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -132,13 +134,13 @@ func fakeClients(t *testing.T, steps ...step) *clients {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := tb.New(tb.Config{BaseURL: server.URL, Token: "fixture.project.signature", HTTPClient: server.Client(), MaxRetries: -1})
+	c, err := tb.New(tb.Config{BaseURL: server.URL, Token: "fixture.project.signature", HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &clients{management: m.WithToken("fixture.user.signature"), data: c,
-		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: cliClientID, SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
-		databaseConfig: tb.Config{BaseURL: server.URL, HTTPClient: server.Client(), MaxRetries: -1},
+		exchange:       tsauth.ExchangeConfig{Issuer: server.URL + "/terrascale", HTTPClient: server.Client(), ClientID: tsauth.CLIClientID, SubjectToken: func(context.Context) (string, error) { return "fixture.user.signature", nil }, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}},
+		databaseConfig: tb.Config{BaseURL: server.URL, HTTPClient: server.Client()},
 	}
 }
 func schemaFor(t *testing.T, r resource.Resource) schema.Schema {
@@ -172,14 +174,14 @@ func noErrors(t *testing.T, d diag.Diagnostics) {
 	}
 }
 func projectJSON(name string) string {
-	return `{"id":"` + projectID + `","organization_id":"` + orgID + `","created_by":"` + collectionID + `","name":"` + name + `"}`
+	return `{"id":"` + projectID + `","organization_id":"` + orgID + `","created_by":"` + collectionID + `","created_at":"2026-10-27T00:00:00Z","role":"owner","name":"` + name + `"}`
 }
 func databaseJSON(all bool, regions string) string {
 	return `{"id":"` + databaseID + `","projectId":"` + projectID + `","name":"main","homeRegion":"gru","replicaRegions":` + regions + `,"allRegions":` + map[bool]string{true: "true", false: "false"}[all] + `}`
 }
 func collectionJSON(id string) string { return `{"id":"` + id + `","name":"users","created_at":"1"}` }
 func keyJSON() string {
-	return `{"id":"` + keyID + `","organization_id":"` + orgID + `","project_id":"` + projectID + `","created_by":"` + collectionID + `","name":"reader","scopes":["documents:read"],"database":"main"}`
+	return `{"id":"` + keyID + `","organization_id":"` + orgID + `","project_id":"` + projectID + `","created_by":"` + collectionID + `","created_at":"2026-10-27T00:00:00Z","name":"reader","scopes":["documents:read"],"database":"main"}`
 }
 func projectState() projectModel {
 	return projectModel{ID: types.StringValue(projectID), OrganizationID: types.StringValue(orgID), Name: types.StringValue("app")}
@@ -334,7 +336,11 @@ func TestReadMissingRemovesStateAndForbiddenPreservesState(t *testing.T) {
 		for _, status := range []int{404, 403} {
 			t.Run(kind+http.StatusText(status), func(t *testing.T) {
 				route := map[string]string{"project": projectPath, "database": databasePath, "collection": collectionPath, "api_key": projectPath + "/api-keys?limit=100"}[kind]
-				c := fakeClients(t, step{method: "GET", path: route, status: status, response: `{"error":{"code":"unknown_route","message":"fixture-secret"}}`})
+				code := map[string]string{"project": "not_found", "database": "unknown_database", "collection": "unknown_collection", "api_key": "not_found"}[kind]
+				if status != 404 {
+					code = "forbidden_scope"
+				}
+				c := fakeClients(t, step{method: "GET", path: route, status: status, response: `{"error":{"code":"` + code + `","message":"fixture-secret"}}`})
 				var r resource.Resource
 				var m any
 				switch kind {
@@ -371,6 +377,100 @@ func TestReadMissingRemovesStateAndForbiddenPreservesState(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+func TestReadUntypedNotFoundPreservesState(t *testing.T) {
+	for _, kind := range []string{"project", "database", "collection", "api_key"} {
+		for _, response := range []string{`{"error":{"code":"unknown_route"}}`, `not found`} {
+			t.Run(kind+response, func(t *testing.T) {
+				route := map[string]string{"project": projectPath, "database": databasePath, "collection": collectionPath, "api_key": projectPath + "/api-keys?limit=100"}[kind]
+				c := fakeClients(t, step{method: "GET", path: route, status: 404, response: response})
+				var r resource.Resource
+				var m any
+				switch kind {
+				case "project":
+					r = &projectResource{clients: c}
+					m = projectState()
+				case "database":
+					r = &databaseResource{clients: c}
+					m = databaseState()
+				case "collection":
+					r = &collectionResource{clients: c}
+					m = collectionState()
+				case "api_key":
+					r = &apiKeyResource{clients: c}
+					m = keyState(t)
+				}
+				state := stateFor(t, r, m)
+				resp := resource.ReadResponse{State: state}
+				r.Read(t.Context(), resource.ReadRequest{State: state}, &resp)
+				if !resp.Diagnostics.HasError() || resp.State.Raw.IsNull() {
+					t.Fatal("an unknown route removed state or was ignored")
+				}
+			})
+		}
+	}
+}
+func TestErrorDetailNamesCodeAndRequestID(t *testing.T) {
+	for _, tc := range []struct{ code, want string }{
+		{"name_taken", "HTTP 409 name_taken. A resource with this name already exists. Import it"},
+		{"forbidden_scope", "HTTP 403 forbidden_scope. The credential lacks a required scope"},
+		{"Bad Code!", "HTTP 409. Check permissions"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			status := 409
+			if tc.code == "forbidden_scope" {
+				status = 403
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Request-ID", "01M5ZQR59A7EENX6D330FTQ9GF")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, `{"error":{"code":"`+tc.code+`","message":"fixture-secret"}}`)
+			}))
+			defer server.Close()
+			c, err := tb.New(tb.Config{BaseURL: server.URL, Token: "fixture.project.signature", HTTPClient: server.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Database(projectID, "main").CreateCollection(t.Context(), "users")
+			var d diag.Diagnostics
+			apiError(&d, "Create collection", err)
+			detail := d[0].Detail()
+			if !strings.Contains(detail, tc.want) || !strings.Contains(detail, "Request ID: 01M5ZQR59A7EENX6D330FTQ9GF.") || strings.Contains(detail, "fixture-secret") || strings.Contains(detail, "Bad Code") {
+				t.Fatalf("detail %q", detail)
+			}
+		})
+	}
+}
+func TestStalledConnectionTimesOut(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer conn.Close() // accept, then never answer the TLS handshake
+		}
+	}()
+	c, err := tb.New(tb.Config{BaseURL: "https://" + listener.Addr().String(), Token: "fixture.project.signature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = c.Database(projectID, "main").Collection("users").Info(t.Context())
+	if elapsed := time.Since(start); err == nil || elapsed > 45*time.Second {
+		t.Fatalf("stalled request returned %v after %s", err, elapsed)
+	}
+	var d diag.Diagnostics
+	apiError(&d, "Read collection", err)
+	if !strings.Contains(d[0].Detail(), "timed out") {
+		t.Fatalf("detail %q", d[0].Detail())
 	}
 }
 func TestDeleteMissingIsIdempotent(t *testing.T) {
@@ -513,19 +613,18 @@ func TestImports(t *testing.T) {
 	}
 }
 
-func TestCreatedKeyWithoutSecretRetainsRevocableIdentity(t *testing.T) {
+func TestCreatedKeyWithoutSecretReportsContractError(t *testing.T) {
 	r := &apiKeyResource{clients: fakeClients(t, step{method: "POST", path: projectPath + "/api-keys", response: `{"api_key":` + keyJSON() + `}`, status: 201})}
 	m := keyState(t)
 	m.ID = types.StringUnknown()
 	m.Secret = types.StringUnknown()
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: schemaFor(t, r)}}
 	r.Create(t.Context(), resource.CreateRequest{Plan: planFor(t, r, m)}, &resp)
-	if !resp.Diagnostics.HasError() {
-		t.Fatal("missing one-time secret was not diagnosed")
+	if !resp.Diagnostics.HasError() || !strings.Contains(resp.Diagnostics[0].Detail(), "does not match the public API contract") {
+		t.Fatalf("missing one-time secret was not diagnosed as a contract error: %v", resp.Diagnostics)
 	}
-	noErrors(t, resp.State.Get(t.Context(), &m))
-	if m.ID.ValueString() != keyID || !m.Secret.IsNull() {
-		t.Fatal("lost identity or saved an empty secret")
+	if !resp.State.Raw.IsNull() {
+		t.Fatal("saved a key without its secret")
 	}
 }
 

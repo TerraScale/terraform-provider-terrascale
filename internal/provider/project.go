@@ -81,7 +81,7 @@ func (r *projectResource) Delete(ctx context.Context, req resource.DeleteRequest
 	if resp.Diagnostics.HasError() || !requireManagement(r.clients, &resp.Diagnostics) {
 		return
 	}
-	err := r.clients.management.DeleteProject(ctx, m.OrganizationID.ValueString(), m.ID.ValueString())
+	_, err := r.clients.management.DeleteProject(ctx, m.OrganizationID.ValueString(), m.ID.ValueString())
 	if err != nil && !notFound(err) {
 		apiError(&resp.Diagnostics, "Delete project", err)
 	}

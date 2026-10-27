@@ -243,7 +243,7 @@ func (m *databaseModel) database(ctx context.Context, c *clients) (*tb.Database,
 			}
 		}
 		if page.Next == "" {
-			return nil, &tb.APIError{Status: http.StatusNotFound}
+			return nil, &tb.APIError{Status: http.StatusNotFound, Code: tb.ErrUnknownDatabase}
 		}
 		if seen[page.Next] {
 			return nil, errors.New("repeated database pagination cursor")

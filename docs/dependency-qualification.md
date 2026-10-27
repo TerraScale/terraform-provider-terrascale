@@ -2,14 +2,15 @@
 
 The provider's minimum Go version is **1.26.0**, required by the patched x/net,
 x/sys and x/text modules. This minimum is a source compatibility floor, not a
-release compiler selection. The published `terrascale.tech/sdk v0.0.1` dependency
-is unchanged; its own minimum Go version is not the provider release compiler.
+release compiler selection. The published `terrascale.tech/sdk v0.0.6` dependency's
+own minimum Go version is not the provider release compiler.
 Both CI and release use the exact **1.27.3** compiler in `.go-version`.
 This supersedes the older Go 1.25.0 preparation instructions in `release.md`.
 
 On 2026-10-26 the official Go download catalog listed Go 1.27.3 as latest stable.
 The module proxy listed gRPC **1.84.0**, x/net **0.61.0**, and x/sys **0.49.0**
-as latest stable; these exceed the advisory patch floors. Go MVS also advances
+as latest stable; these exceed the advisory patch floors. On 2026-10-27 x/net
+advanced to **0.62.0** for GO-2026-6860 and GO-2026-6866. Go MVS also advances
 x/text to **0.43.0** and the gRPC-required genproto RPC revision. `go.mod` and
 `go.sum` record the selected graph; no advisory exceptions are configured.
 An explicit OpenTelemetry SDK **1.47.0** graph pin fixes GO-2026-6505 in the

@@ -9,7 +9,8 @@ This supersedes the older Go 1.25.0 preparation instructions in `release.md`.
 
 On 2026-10-26 the official Go download catalog listed Go 1.27.3 as latest stable.
 The module proxy listed gRPC **1.84.0**, x/net **0.61.0**, and x/sys **0.49.0**
-as latest stable; these exceed the advisory patch floors. Go MVS also advances
+as latest stable; these exceed the advisory patch floors. On 2026-10-27 x/net
+advanced to **0.62.0** for GO-2026-6860 and GO-2026-6866. Go MVS also advances
 x/text to **0.43.0** and the gRPC-required genproto RPC revision. `go.mod` and
 `go.sum` record the selected graph; no advisory exceptions are configured.
 An explicit OpenTelemetry SDK **1.47.0** graph pin fixes GO-2026-6505 in the

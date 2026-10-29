@@ -17,9 +17,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Scan legacy terms within CI
+        run: |
+          scanner="$RUNNER_TEMP/legacy-scanner"
+          mkdir -p "$scanner"
+          for file in scan.py terms.json allow-list.json owners.json; do
+            curl --fail --silent --show-error --location --retry 2 \
+              "https://raw.githubusercontent.com/TerraScale/terrascale/a2e200187ffe32084a10f2a81c9e3e1f59b49a29/scripts/legacy-scan/$file" \
+              --output "$scanner/$file"
+          done
+          python3 "$scanner/scan.py" --repo terraform-provider-terrascale --root . --output "$RUNNER_TEMP/legacy-hits.md"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: .go-version
+          cache: true
+          cache-dependency-path: go.sum
       - name: Cache advisory scanner
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

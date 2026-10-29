@@ -7,7 +7,11 @@ permissions:
 env:
   GOTOOLCHAIN: local
 jobs:
+  # Same checks as main's test workflow, run on the tagged commit before anything is published.
+  test:
+    uses: ./.github/workflows/test.yml
   release:
+    needs: [test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

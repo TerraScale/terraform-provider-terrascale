@@ -5,15 +5,10 @@ go 1.26.0
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
-	github.com/hashicorp/terraform-plugin-go v0.31.0
 	terrascale.tech/sdk v0.0.7
 )
 
-require (
-	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.9.2 // indirect
-)
+require github.com/hashicorp/terraform-plugin-go v0.31.0 // indirect
 
 require (
 	github.com/fatih/color v1.18.0 // indirect
@@ -33,8 +28,6 @@ require (
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	// Security pin for the upstream test graph (GO-2026-6505); retain when tidying.
-	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect

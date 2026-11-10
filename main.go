@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
-var version = "dev"
+var version string = 0
 
 func main() {
 	if err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{

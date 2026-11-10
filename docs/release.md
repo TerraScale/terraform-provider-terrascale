@@ -3,7 +3,7 @@
 These files prepare `github.com/TerraScale/terraform-provider-terrascale` for its
 initial v0.0.1 release. They do not create a repository, tag, key, or release.
 The source includes the Go 1.25.0 root main, `main.version`, Framework protocol 6
-provider, and project/database/collection/api_key resources, tests and docs.
+provider, and project/database/collection/api_key resources and docs.
 
 ## Validate without credentials or a Git repository
 
@@ -26,11 +26,11 @@ custom Git environment or `git init` is required. Outside Git, its fallback
 version is `0.0.0-SNAPSHOT` rather than the eventual release version.
 Do not treat a successful configuration check as a successful build.
 
-CI runs `go test ./...`, `go build ./...`, configuration validation and the
-unsigned snapshot under the check named `test`, on GitHub-hosted Ubuntu.
-It verifies six ZIPs, binary naming, protocol-6 manifest and every SHA256 digest.
-No local test run is required before pushing. The release workflow independently
-runs tests/build/config validation before importing the signing key.
+CI runs the legacy-term scan, `go vet ./...`, `go build ./...`, govulncheck and
+configuration validation under the check named `all-green`, on GitHub-hosted Ubuntu.
+The release workflow runs govulncheck, `go build ./...` and configuration
+validation, then builds the unsigned snapshot and verifies six ZIPs, binary
+naming, protocol-6 manifest and every SHA256 digest before importing the signing key.
 
 ## User-only signing setup
 
@@ -50,7 +50,7 @@ runs tests/build/config validation before importing the signing key.
    automatically supplies `GITHUB_TOKEN`; no PAT or Registry token belongs in
    this workflow. Key availability, validity and Registry trust remain user
    prerequisites, not something this preparation verified.
-3. After the public repository and green `test` check exist, use the Registry's
+3. After the public repository and green `all-green` check exist, use the Registry's
    provider publishing flow to connect `TerraScale/terraform-provider-terrascale`.
    Confirm namespace access and public signing-key registration there. This
    manual Registry setup is separate from uploading GitHub release assets.

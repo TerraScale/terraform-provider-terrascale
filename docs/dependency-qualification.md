@@ -13,29 +13,30 @@ as latest stable; these exceed the advisory patch floors. On 2026-10-27 x/net
 advanced to **0.62.0** for GO-2026-6860 and GO-2026-6866. Go MVS also advances
 x/text to **0.43.0** and the gRPC-required genproto RPC revision. `go.mod` and
 `go.sum` record the selected graph; no advisory exceptions are configured.
-An explicit OpenTelemetry SDK **1.47.0** graph pin fixes GO-2026-6505 in the
-upstream dependency test graph, although provider binaries do not import it.
-Retain that security pin when tidying until the upstream requirement advances.
+GO-2026-6505 (OpenTelemetry SDK before 1.45.0) needs no graph pin: gRPC's
+`go.mod` requires SDK 1.44.0, but no provider package imports it and both
+govulncheck scans report no vulnerabilities.
 
 ## Advisory gates
 
-The existing `test` job installs **govulncheck v1.9.0**, caching its executable
+The CI `all-green` job and the release job install **govulncheck v1.9.0**, caching its executable
 with the scanner and compiler versions in the key. Go dependency/build caching
 continues through setup-go. Every scan queries the live Go vulnerability feed;
 advisory results are not cached as a substitute for scanning.
 
-Both test and release jobs run a provider module scan and a source
-symbol scan including tests. The module gate fails on **every known advisory**,
+Both CI and release jobs run a provider module scan and a source
+symbol scan. The module gate fails on **every known advisory**,
 including low/moderate/unrated findings and findings outside called symbols.
 Scanner/feed/loading errors also fail the job. The source scan adds call-path
 evidence; a static call path alone does not demonstrate an exploitable attack.
 
 A full `go list -m all` OSV comparison additionally covers upstream dependency
-test/tool constraints outside provider imports. Its remaining GO-2026-5932
-match is specific to x/crypto's unmaintained `openpgp` packages, with no fixed
-version. Provider package graphs and binary metadata must establish their
-absence; a match against the containing module is not runtime reachability.
-This is a recorded package-specific disposition, not a scanner exception.
+test/tool constraints outside provider imports. Its remaining matches are
+GO-2026-5932, specific to x/crypto's unmaintained `openpgp` packages with no
+fixed version, and GO-2026-6505 in OpenTelemetry SDK 1.44.0. Provider package
+graphs and binary metadata must establish their absence; a match against the
+containing module is not runtime reachability. These are recorded
+package-specific dispositions, not scanner exceptions.
 
 GoReleaser's post-build hook checks each of the six actual release binaries:
 Linux, macOS and Windows, each for amd64 and arm64. It records `go version -m`,
@@ -43,7 +44,8 @@ requires the exact `.go-version` compiler, and runs a binary module scan before
 archiving, signing or publishing. Module scanning deliberately does not require
 a recoverable symbol table in stripped binaries. Missing format/compiler support
 is a scanner error and blocks the build; it is never reported as a clean scan.
-The existing ZIP, SHA256 and protocol-6 manifest checks remain in `test`.
+The release job checks the ZIPs, SHA256 digests and protocol-6 manifest of an
+unsigned snapshot before it imports the signing key.
 
 ## Unsigned local qualification
 
@@ -52,8 +54,7 @@ on PATH (CI uses `scripts/install-govulncheck.sh` and `GITHUB_PATH`).
 
 ```sh
 nice -n 19 govulncheck -scan=module -show=verbose
-nice -n 19 govulncheck -test -show=verbose ./...
-nice -n 19 go test ./...
+nice -n 19 govulncheck -show=verbose ./...
 nice -n 19 goreleaser check --config .goreleaser.yml
 nice -n 19 goreleaser release --config .goreleaser.yml --snapshot --clean --skip=sign,publish
 ```

@@ -115,16 +115,10 @@ not replayed by the SDK: inspect or import before retrying a failed creation.
 ## Development and release preparation
 
 ```sh
-nice -n 19 go test ./...
 nice -n 19 go build ./...
 ```
 
-Tests use `httptest` HTTP fakes only: no TerraBase binary or production credentials.
-They cover public auth/API routes, token exchange, CRUD, pagination, 404 removal,
-permission and expired-token errors, cancellation, imports,
-secret preservation, schema validation and replacement planning. GitHub CI's
-`test` check also validates six unsigned release archives and the protocol manifest.
-CI is the gate; a local test run is not required before pushing.
+CI (`ci.yml`, required check `all-green`) runs the legacy-term scan, `go vet ./...`, `go build ./...`, govulncheck and `goreleaser check`; the tag release also checks the six unsigned archives and the protocol manifest before signing.
 
 [Release preparation](docs/release.md) documents the unsigned dry run and the
 user-only GPG/Registry setup. No production apply/destroy was performed.

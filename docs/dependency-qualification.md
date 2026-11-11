@@ -5,7 +5,6 @@ x/sys and x/text modules. This minimum is a source compatibility floor, not a
 release compiler selection. The published `terrascale.tech/sdk v0.0.7` dependency's
 own minimum Go version is not the provider release compiler.
 Both CI and release use the exact compiler in `.go-version`.
-This supersedes the older Go 1.25.0 preparation instructions in `release.md`.
 
 On 2026-10-26 the official Go download catalog listed Go 1.27.3 as latest stable.
 The module proxy listed gRPC **1.84.0**, x/net **0.61.0**, and x/sys **0.49.0**
@@ -44,8 +43,9 @@ package-specific dispositions, not scanner exceptions.
 GoReleaser's post-build hook checks each of the six actual release binaries:
 Linux, macOS and Windows, each for amd64 and arm64. It records `go version -m`,
 requires the exact `.go-version` compiler, and runs a binary module scan before
-archiving, signing or publishing. Module scanning deliberately does not require
-a recoverable symbol table in stripped binaries. Missing format/compiler support
+archiving, signing or publishing. Like the module gate, the binary scan fails on
+every known advisory, with or without a severity, and needs no recoverable symbol
+table in the stripped binaries. Missing format/compiler support
 is a scanner error and blocks the build; it is never reported as a clean scan.
 The release job checks the ZIPs, SHA256 digests and protocol-6 manifest of an
 unsigned snapshot before it imports the signing key.

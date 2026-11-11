@@ -2,7 +2,7 @@
 
 Manage projects, databases, collections and project API keys with the
 [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)
-and the public [`terrascale.tech/sdk v0.0.6`](https://pkg.go.dev/terrascale.tech/sdk@v0.0.6).
+and the public [`terrascale.tech/sdk`](https://pkg.go.dev/terrascale.tech/sdk), at the version `go.mod` requires.
 Every SDK request is bounded: 10 s dial and TLS handshake, 30 s response
 headers and a 30 s deadline per operation including retries, so a stalled
 connection fails the apply instead of hanging it.
@@ -119,6 +119,7 @@ nice -n 19 go build ./...
 ```
 
 CI (`ci.yml`, required check `all-green`) runs the legacy-term scan, `go vet ./...`, `go build ./...`, govulncheck and `goreleaser check`; the tag release also checks the six unsigned archives and the protocol manifest before signing.
+The daily `Advisories` workflow runs the same govulncheck scans on `main`; when it fails, it opens the `Advisory scan failed` issue or comments on the open one.
 
 [Release preparation](docs/release.md) documents the unsigned dry run and the
 user-only GPG/Registry setup. No production apply/destroy was performed.

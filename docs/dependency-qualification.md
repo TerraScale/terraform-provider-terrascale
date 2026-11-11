@@ -21,13 +21,14 @@ govulncheck scans report no vulnerabilities.
 
 ## Advisory gates
 
-The CI `all-green` job and the release job install **govulncheck v1.9.0**, caching its executable
+The CI `all-green` job, the release job and the daily `Advisories` workflow run the
+`.github/actions/advisories` action. It installs **govulncheck v1.9.0**, caching its executable
 with the scanner and compiler versions in the key. Go dependency/build caching
 continues through setup-go. Every scan queries the live Go vulnerability feed;
 advisory results are not cached as a substitute for scanning.
 
-Both CI and release jobs run a provider module scan and a source
-symbol scan. The module gate fails on **every known advisory**,
+The action runs a provider module scan and a source symbol scan as two
+separate steps. The module gate fails on **every known advisory**,
 including low/moderate/unrated findings and findings outside called symbols.
 Scanner/feed/loading errors also fail the job. The source scan adds call-path
 evidence; a static call path alone does not demonstrate an exploitable attack.
@@ -52,7 +53,7 @@ unsigned snapshot before it imports the signing key.
 ## Unsigned local qualification
 
 Use the pinned compiler and scanner plus GoReleaser v2.19.0. Put `govulncheck`
-on PATH (CI uses `scripts/install-govulncheck.sh` and `GITHUB_PATH`).
+on PATH (the advisories action installs it and adds it to `GITHUB_PATH`).
 
 ```sh
 nice -n 19 govulncheck -scan=module -show=verbose

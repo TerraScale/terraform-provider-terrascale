@@ -1,0 +1,25 @@
+name: Advisories
+description: Installs the pinned govulncheck, then scans the required modules and the code the provider calls for known advisories.
+runs:
+  using: composite
+  steps:
+    - name: Cache advisory scanner
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/terrascale/govulncheck
+        key: ${{ runner.os }}-${{ runner.arch }}-govulncheck-v1.9.0-${{ hashFiles('.go-version') }}
+    - name: Install pinned advisory scanner
+      shell: bash
+      run: |
+        scanner_dir="$HOME/.cache/terrascale/govulncheck"
+        mkdir -p "$scanner_dir"
+        if [[ ! -x "$scanner_dir/govulncheck" ]]; then
+          GOBIN="$scanner_dir" go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+        fi
+        echo "$scanner_dir" >> "$GITHUB_PATH"
+    - name: Module advisory scan
+      shell: bash
+      run: govulncheck -scan=module -show=verbose
+    - name: Source reachability scan
+      shell: bash
+      run: govulncheck -show=verbose ./...

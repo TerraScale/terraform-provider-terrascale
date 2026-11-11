@@ -1,0 +1,38 @@
+name: Advisories
+on:
+  schedule:
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  GOTOOLCHAIN: local
+jobs:
+  advisories:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: .go-version
+          cache: true
+      - uses: ./.github/actions/advisories
+      - name: Open or update the advisory issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          issue=$(gh issue list --state open --search 'in:title "Advisory scan failed"' --json number,title --jq '[.[] | select(.title == "Advisory scan failed")][0].number // empty')
+          if [[ -n "$issue" ]]; then
+            gh issue comment "$issue" --body "The daily advisory scan failed again: $RUN_URL"
+          else
+            gh issue create --title 'Advisory scan failed' --body "The daily advisory scan failed: $RUN_URL. Read its failing step: a Go toolchain advisory is fixed by a newer Go in .go-version, a module advisory by go get of the fixed module version. Until that fix is merged, every pull request is red on the same scan."
+          fi

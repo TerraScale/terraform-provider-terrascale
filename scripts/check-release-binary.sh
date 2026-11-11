@@ -10,6 +10,4 @@ if [[ "$actual" != *": $expected" ]]; then
   echo "Release binary must use $expected" >&2
   exit 1
 fi
-# Module-level scanning also covers stripped binaries and fails on every known
-# advisory, including those without a severity or recoverable symbol table.
 govulncheck -mode=binary -scan=module -show=verbose "$binary"

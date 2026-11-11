@@ -2,12 +2,14 @@
 
 These files prepare `github.com/TerraScale/terraform-provider-terrascale` for its
 initial v0.0.1 release. They do not create a repository, tag, key, or release.
-The source includes the Go 1.25.0 root main, `main.version`, Framework protocol 6
-provider, and project/database/collection/api_key resources and docs.
+The source includes the root main, built with the Go version in `.go-version`,
+`main.version`, Framework protocol 6 provider, and project/database/collection/api_key
+resources and docs.
 
 ## Validate without credentials or a Git repository
 
-Install Go 1.25.0, Git (the executable only), and GoReleaser v2.19.0 separately.
+Install the Go version in `.go-version`, Git (the executable only), govulncheck v1.9.0
+and GoReleaser v2.19.0 separately.
 From the complete provider source directory, run:
 
 ```sh
@@ -19,18 +21,22 @@ nice -n 19 goreleaser release --config .goreleaser.yml --snapshot --clean --skip
 The snapshot command builds all six target binaries and ZIP archives into
 `dist/`; `--clean` replaces that generated directory. The versioned manifest is
 checksummed from the source `terraform-registry-manifest.json`; GoReleaser uploads
-it with the versioned release asset name, without copying it into `dist/`. It needs source and Go
-module dependencies but no `.git`, GPG key, Registry token or GitHub token.
+it with the versioned release asset name, without copying it into `dist/`. It needs source, Go
+module dependencies and the Go vulnerability database (the post-build hook scans
+each binary) but no `.git`, GPG key, Registry token or GitHub token.
 GoReleaser v2.19.0 explicitly accepts non-repositories in snapshot mode; no
 custom Git environment or `git init` is required. Outside Git, its fallback
 version is `0.0.0-SNAPSHOT` rather than the eventual release version.
 Do not treat a successful configuration check as a successful build.
 
-CI runs the legacy-term scan, `go vet ./...`, `go build ./...`, govulncheck and
-configuration validation under the check named `all-green`, on GitHub-hosted Ubuntu.
-The release workflow runs govulncheck, `go build ./...` and configuration
+CI runs the legacy-term scan, `go vet ./...`, `go build ./...`, the govulncheck
+module and source scans of `.github/actions/advisories` and configuration validation
+under the check named `all-green`, on GitHub-hosted Ubuntu 24.04.
+The release workflow runs the same advisory action, `go build ./...` and configuration
 validation, then builds the unsigned snapshot and verifies six ZIPs, binary
 naming, protocol-6 manifest and every SHA256 digest before importing the signing key.
+The daily `Advisories` workflow runs the same action on `main`; when it fails, it opens
+the `Advisory scan failed` issue or comments on the open one.
 
 ## User-only signing setup
 
@@ -86,7 +92,8 @@ authorized release is made.
 
 Action commit SHAs were resolved from actual upstream GitHub tag references:
 `actions/checkout@v4`, `actions/setup-go@v5`,
-`goreleaser/goreleaser-action@v6`, and `crazy-max/ghaction-import-gpg@v6`.
+`goreleaser/goreleaser-action@v6`, `crazy-max/ghaction-import-gpg@v6`, and
+`actions/cache@v6.1.0` in `.github/actions/advisories`.
 Both workflows pin the full resolved commit IDs and GoReleaser v2.19.0.
 
 - [GoReleaser no-repository snapshot implementation](https://github.com/goreleaser/goreleaser/blob/v2.19.0/internal/pipe/git/git.go)

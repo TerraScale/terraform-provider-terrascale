@@ -17,7 +17,7 @@ resource "terrascale_api_key" "reader" {
   organization_id = terrascale_project.app.organization_id
   project_id      = terrascale_project.app.id
   name            = "Document reader"
-  scopes          = ["documents:read"]
+  scopes          = ["databases:read"]
   database_name   = "main"
 }
 
@@ -33,24 +33,21 @@ output "reader_secret" {
   ULIDs.
 - `name` (String, Required): display name, 1–128 UTF-16 code units, including a
   letter or digit, no controls or surrounding whitespace.
-- `scopes` (Set of String, Required): nonempty subset of `documents:read` and
-  `documents:write`.
-- `database_name` (String, Optional): lowercase database name matching
-  `^[a-z][a-z0-9_-]{0,62}$`, limiting the key to that database. Omit to reach all databases in the project.
+- `scopes` (Set of String, Required): nonempty subset of `databases:read`,
+  `databases:write`, `sql:read` and `sql:write`.
+- `database_id` (String, Optional): canonical uppercase database ULID, limiting
+  the key to that immutable database. Omit to reach all databases in the project.
 - `id` (String, Read-Only): API key ULID.
 - `secret` (String, Sensitive, Read-Only): one-time secret retained across refresh.
   Null for imports.
 
 Every configuration change replaces the key and revokes the old key. Deletion
-revokes immediately. `documents:read` also permits collection reads;
-`documents:write` permits collection creation and deletion. The collection
-resource needs both scopes for its full lifecycle, including read-before-delete
-identity checks. A read-only key cannot create or delete collections. A key with both scopes can
-configure a separate collection provider alias using its `secret`; see the
-[collection example](collection.md). The alias exchanges the key for a project
-access token.
-If creation has an uncertain outcome, inspect the project's keys before retrying;
-the provider does not retry uncertain mutations or recover the one-time secret.
+revokes immediately. `databases:read` permits database metadata and rules reads;
+`databases:write` permits database management and rules deployment. SQL access
+uses `sql:read` and `sql:write`. Document scopes have been removed.
+A key with database read/write scopes can configure a separate provider alias
+using its `secret` for rules deployment. Keep the alias separate from the provider
+that manages the key to avoid a dependency cycle.
 
 ## Import
 

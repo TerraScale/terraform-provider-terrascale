@@ -3,7 +3,7 @@
 These files prepare `github.com/TerraScale/terraform-provider-terrascale` for its
 initial v0.0.1 release. They do not create a repository, tag, key, or release.
 The source includes the root main, built with the Go version in `.go-version`,
-`main.version`, Framework protocol 6 provider, and project/database/collection/api_key
+`main.version`, Framework protocol 6 provider, and project/database/api_key
 resources and docs.
 
 ## Validate without credentials or a Git repository

@@ -1,6 +1,6 @@
 # Terraform Provider for TerraScale
 
-Manage projects, databases, collections and project API keys with the
+Manage projects, databases and project API keys with the
 [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)
 and the public [`terrascale.tech/sdk`](https://pkg.go.dev/terrascale.tech/sdk), at the version `go.mod` requires.
 Every SDK request is bounded: 10 s dial and TLS handshake, 30 s response
@@ -46,71 +46,41 @@ resource "terrascale_database" "main" {
 
 ## Credentials and state
 
-- `TERRASCALE_ACCESS_TOKEN`: existing **ts-cli user access token from ts-auth**, used by
-  project, database and API-key management. An organization ID is not a credential.
-  Never use an internal peer credential.
-- `TERRASCALE_PROJECT_TOKEN`: **public ts-auth project API key or project access token**,
-  needed only for collections. It must authorize the collection's project and
-  collection operations. Collection reads require `documents:read`; creation and
-  deletion require `documents:write`. Use both scopes for the provider's complete
-  collection lifecycle, including its read-before-delete identity check. Public
-  keys (`<ULID>_<52 base32 characters>`) are exchanged for a cached token with
-  only those two scopes; ts-auth derives the project from the key metadata.
-  Project access tokens are sent directly.
+- `TERRASCALE_ACCESS_TOKEN`: ts-cli user access token from ts-auth, used for project,
+  database and API-key management. The provider exchanges it for a cached project
+  token with `databases:read` and `databases:write` for database operations.
+- `TERRASCALE_PROJECT_TOKEN`: public ts-auth project API key or project access token
+  for project operations. Public keys are exchanged for cached tokens with
+  `databases:read` and `databases:write`; project JWTs are used directly.
 
-Explicit `access_token` and `project_token` provider attributes override the
-corresponding environment value. Keep credentials out of checked-in HCL and shell
-arguments. Use provider aliases with separate existing credentials for collections
-in different projects. Do not configure a provider using a resource managed by
-that same provider, which introduces a dependency cycle. A key created by the
-default management provider can configure a separate collection provider alias;
-see the [collection example](docs/resources/collection.md).
-
-`terrascale_api_key.secret` is returned once and **stored in Terraform state**.
-Sensitive marking hides normal display; it does not encrypt state or saved plans.
-Use an encrypted state backend with restricted access. Imported keys have a null
-secret and are not rotated automatically. See [API key documentation](docs/resources/api_key.md).
+Explicit provider attributes override environment defaults. Keep credentials out
+of checked-in HCL and shell arguments. Never use internal peer credentials.
+API-key secrets are stored in Terraform state. Sensitive marking hides display;
+use an encrypted backend with restricted access. Imports cannot recover secrets.
 
 ## Resource behavior
 
 | Resource | In-place updates | Import identifier |
 |---|---|---|
 | `terrascale_project` | Display name | `organization_id/project_id` |
-| `terrascale_database` | Replica regions and all-region placement | `organization_id/project_id/database_id` |
-| `terrascale_collection` | None; changes replace | `project_id/database_name/collection_name` |
+| `terrascale_database` | Serving regions and all-region placement | `organization_id/project_id/database_id` |
 | `terrascale_api_key` | None; changes replace and revoke | `organization_id/project_id/key_id` |
 
-Every entity ID is a canonical uppercase ULID without prefixes. Database and
-collection names match `^[a-z][a-z0-9_-]{0,62}$`. Projects and keys accept display
-names of 1–128 UTF-16 code units, including a letter or digit, without control
-characters or surrounding whitespace.
+Entity IDs are canonical uppercase ULIDs. Database names match
+`^[a-z][a-z0-9_-]{0,62}$`. Projects and keys accept display names of 1–128 UTF-16
+code units, including a letter or digit, without controls or surrounding whitespace.
+Database replacement/deletion destroys data; use `lifecycle.prevent_destroy` where
+appropriate. Reads, updates and deletion address the immutable database ULID.
 
-Database and collection replacement/deletion destroys data. Use
-`lifecycle.prevent_destroy` where appropriate. Database replicas must be explicitly
-cleared before deletion; the provider does not clear them automatically. A project
-must contain no databases before deletion.
+The current API selects complete serving `regions` or `all_regions`; it has no
+home/replica split. `home_region` and `replica_regions` have been removed. Use
+`regions` and re-import existing databases to populate the current schema.
+The retired `terrascale_collection` resource and document scopes have been removed.
+API keys accept `databases:read`, `databases:write`, `sql:read` and `sql:write`.
 
-Database and collection routes address names. Refresh never adopts a different
-ID at the same name; database placement updates and both resources' deletions
-verify identity first. The API has no conditional delete: concurrent
-deletion/recreation between the check and mutation cannot be prevented. Avoid
-concurrent external lifecycle changes during apply/destroy.
-
-Refresh removes resources only on a typed not-found 404 (`unknown_database`,
-`unknown_collection` or ts-auth `not_found`) and removes revoked keys absent
-from a full paginated key list. Other errors, including a 404 `unknown_route`
-or an untyped proxy 404, preserve state and fail. Error diagnostics name the
-HTTP status, the validated error code with guidance, Retry-After and the
-request ID; server messages and credentials are omitted. A data-plane 404
-`unknown_database` also answers a `project_token` for a different project. A management 404 can
-also mean that the user lost organization membership; verify access before
-applying a resulting recreation plan. Import configuration must match the live
-resource before applying. Omitted placement is computed: new databases accept the
-server's chosen replicas, and refresh/import retain existing placement. Explicit
-replica settings are managed as configured. An explicit empty replica list is
-valid for updates (which can suspend writes), but creation requires a nonempty
-list, omitted placement, or `all_regions=true`. Uncertain mutations are
-not replayed by the SDK: inspect or import before retrying a failed creation.
+Refresh removes resources only on typed not-found responses. Other failures,
+including `unknown_route`, preserve state and fail. Error diagnostics include
+status, validated code, guidance and request ID without token values.
 
 ## Development and release preparation
 

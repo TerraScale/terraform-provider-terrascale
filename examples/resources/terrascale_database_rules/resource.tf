@@ -10,7 +10,7 @@ provider "terrascale" {}
 
 resource "terrascale_database_rules" "main" {
   project  = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
-  database = "main"
+  database = terrascale_database.main.id
   rules = jsonencode({
     tables = {
       todos = {

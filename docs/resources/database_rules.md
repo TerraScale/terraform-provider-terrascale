@@ -13,7 +13,7 @@ for these database scopes.
 ```terraform
 resource "terrascale_database_rules" "main" {
   project  = terrascale_project.app.id
-  database = terrascale_database.main.name
+  database = terrascale_database.main.id
   rules = jsonencode({
     tables = {
       todos = {
@@ -46,8 +46,9 @@ warnings so existing invalid rules can be corrected.
 
 - `project` (String, Required): canonical uppercase project ULID. Changes replace
   the resource.
-- `database` (String, Required): database name matching
-  `^[a-z][a-z0-9_-]{0,62}$`. Changes replace the resource.
+- `database` (String, Required): canonical uppercase database ULID or name
+  matching `^[a-z][a-z0-9_-]{0,62}$`. Prefer the immutable ULID. Changes replace
+  the resource.
 - `rules` (String, Required): JSON object containing `tables`, up to 256 KiB.
   Key order and whitespace never cause a deployment. Optional fields omitted or
   set to null have the same meaning. Use `jsonencode` or `file` to supply JSON.
@@ -71,10 +72,11 @@ requires importing the remaining empty rules set first.
 
 ## Import
 
-Use `project/database`, with a project ULID and database name:
+Use `project/database`, with a project ULID and either a canonical database ULID
+or database name:
 
 ```sh
-terraform import terrascale_database_rules.main 01ARZ3NDEKTSV4RRFFQ69G5FAW/main
+terraform import terrascale_database_rules.main 01ARZ3NDEKTSV4RRFFQ69G5FAW/01ARZ3NDEKTSV4RRFFQ69G5FAX
 ```
 
 Import reads the current rules and version. Match the configuration to the live

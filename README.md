@@ -1,6 +1,6 @@
 # Terraform Provider for TerraScale
 
-Manage projects, databases and project API keys with the
+Manage projects, databases, database rules and project API keys with the
 [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)
 and the public [`terrascale.tech/sdk`](https://pkg.go.dev/terrascale.tech/sdk), at the version `go.mod` requires.
 Every SDK request is bounded: 10 s dial and TLS handshake, 30 s response
@@ -50,7 +50,7 @@ resource "terrascale_database" "main" {
   database and API-key management. The provider exchanges it for a cached project
   token with `databases:read` and `databases:write` for database operations.
 - `TERRASCALE_PROJECT_TOKEN`: public ts-auth project API key or project access token
-  for project operations. Public keys are exchanged for cached tokens with
+  for database rules. Public keys are exchanged for cached tokens with
   `databases:read` and `databases:write`; project JWTs are used directly.
 
 Explicit provider attributes override environment defaults. Keep credentials out
@@ -65,6 +65,11 @@ use an encrypted backend with restricted access. Imports cannot recover secrets.
 | `terrascale_project` | Display name | `organization_id/project_id` |
 | `terrascale_database` | Serving regions and all-region placement | `organization_id/project_id/database_id` |
 | `terrascale_api_key` | None; changes replace and revoke | `organization_id/project_id/key_id` |
+| `terrascale_database_rules` | Complete rules JSON, conditional on the state version | `project/database` |
+
+[Database rules](docs/resources/database_rules.md) compare JSON semantically and
+refresh the current version to reveal drift. Deletion deploys empty rules and denies
+every end-user operation. Import existing rules before managing them.
 
 Entity IDs are canonical uppercase ULIDs. Database names match
 `^[a-z][a-z0-9_-]{0,62}$`. Projects and keys accept display names of 1–128 UTF-16

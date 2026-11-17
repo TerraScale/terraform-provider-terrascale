@@ -80,5 +80,5 @@ google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBN
 google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-terrascale.tech/sdk v0.0.77 h1:lwsVl8a09h5RjSf/+Ol+nLHCELK6GMUJkiI8n9vmXuU=
-terrascale.tech/sdk v0.0.77/go.mod h1:3zTKBKkM/7VkMlvJRbcDRVgN1Vk+G4bjGmlUD/0yULg=
+terrascale.tech/sdk v0.0.79 h1:dQ9z30I3/XIoTCdlzCCa67VUegFLgTe0QE3FXsIXrtg=
+terrascale.tech/sdk v0.0.79/go.mod h1:3zTKBKkM/7VkMlvJRbcDRVgN1Vk+G4bjGmlUD/0yULg=

@@ -5,10 +5,10 @@ go 1.26.0
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
-	terrascale.tech/sdk v0.0.77
+	terrascale.tech/sdk v0.0.79
 )
 
-require github.com/hashicorp/terraform-plugin-go v0.31.0 // indirect
+require github.com/hashicorp/terraform-plugin-go v0.31.0
 
 require (
 	github.com/coder/websocket v1.8.15 // indirect

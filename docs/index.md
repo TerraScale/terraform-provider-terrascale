@@ -1,6 +1,6 @@
 ---
 page_title: "TerraScale Provider"
-description: "Manage TerraScale projects, databases and project API keys."
+description: "Manage TerraScale projects, databases, database rules and project API keys."
 ---
 
 # TerraScale Provider
@@ -32,7 +32,7 @@ provider "terrascale" {}
 - `access_token` (String, Sensitive): ts-cli user access token from ts-auth for project,
   database and API-key management. Defaults to `TERRASCALE_ACCESS_TOKEN`.
 - `project_token` (String, Sensitive): public ts-auth project API key or project
-  access token. Defaults to `TERRASCALE_PROJECT_TOKEN`. Keys are exchanged for
+  access token for database rules. Defaults to `TERRASCALE_PROJECT_TOKEN`. Keys are exchanged for
   `databases:read` and `databases:write`; project JWTs are used directly.
 
 Database operations exchange that user token for a cached project access token

@@ -188,6 +188,10 @@ func importParts(id string, kinds ...string) ([]string, error) {
 			if tb.ValidateID(parts[i]) != nil {
 				return nil, fmt.Errorf("%s must be a canonical uppercase ULID", kind)
 			}
+		} else if kind == "database" {
+			if !namePattern.MatchString(parts[i]) && tb.ValidateID(parts[i]) != nil {
+				return nil, fmt.Errorf("database must be a lowercase name or canonical uppercase ULID")
+			}
 		} else if !namePattern.MatchString(parts[i]) {
 			return nil, fmt.Errorf("%s must match %s", kind, namePattern)
 		}

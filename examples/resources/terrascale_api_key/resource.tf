@@ -3,7 +3,7 @@ resource "terrascale_api_key" "reader" {
   project_id      = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
   name            = "Document reader"
   scopes          = ["databases:read"]
-  database_name   = "main"
+  database_id     = terrascale_database.main.id
 }
 
 # Sensitive hides display; encrypt and restrict access to Terraform state.

@@ -18,7 +18,7 @@ resource "terrascale_api_key" "reader" {
   project_id      = terrascale_project.app.id
   name            = "Document reader"
   scopes          = ["databases:read"]
-  database_name   = "main"
+  database_id     = terrascale_database.main.id
 }
 
 output "reader_secret" {

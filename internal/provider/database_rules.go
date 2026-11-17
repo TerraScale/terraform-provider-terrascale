@@ -33,7 +33,7 @@ func (r *databaseRulesResource) Metadata(_ context.Context, req resource.Metadat
 func (r *databaseRulesResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{Description: "The complete end-user rules for a database. Deletion deploys empty rules, denying every end-user operation. Requires a project credential with databases:read and databases:write.", Attributes: map[string]schema.Attribute{
 		"project":  idAttribute("Owning project ULID. Changes replace the rules resource."),
-		"database": schema.StringAttribute{Required: true, Description: "Database name. Changes replace the rules resource.", Validators: []validator.String{stringvalidator.RegexMatches(namePattern, "Use a lowercase database name, up to 63 characters.")}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"database": schema.StringAttribute{Required: true, Description: "Database name or canonical uppercase ULID. Changes replace the rules resource.", Validators: []validator.String{stringvalidator.Any(idValidator{}, stringvalidator.RegexMatches(namePattern, "Use a lowercase database name, up to 63 characters."))}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"rules":    schema.StringAttribute{Required: true, CustomType: rulesType{}, Description: "Complete rules JSON with a tables object. Key order and whitespace do not cause changes. Missing operations are denied.", Validators: []validator.String{rulesValidator{}}},
 		"version":  schema.StringAttribute{Computed: true, Description: "Current rules version ULID. Refresh reads the live version; deployments use the state version as If-Match."},
 	}}
@@ -161,6 +161,11 @@ func (r *databaseRulesResource) deploy(ctx context.Context, m *databaseRulesMode
 	}
 	current, err := db.DeployRules(ctx, rules, version)
 	if err != nil {
+		var api *tb.APIError
+		if version == nil && errors.As(err, &api) && api.Status == http.StatusPreconditionFailed {
+			d.AddError("Database rules already exist", fmt.Sprintf("This database already has rules. Run terraform import <address> %s/%s, replacing <address> with this resource's Terraform address.", m.Project.ValueString(), m.Database.ValueString()))
+			return
+		}
 		rulesError(d, "Deploy database rules", err)
 		return
 	}

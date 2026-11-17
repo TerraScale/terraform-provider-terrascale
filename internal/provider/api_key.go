@@ -23,7 +23,7 @@ type apiKeyModel struct {
 	OrganizationID types.String `tfsdk:"organization_id"`
 	ProjectID      types.String `tfsdk:"project_id"`
 	Name           types.String `tfsdk:"name"`
-	DatabaseName   types.String `tfsdk:"database_name"`
+	DatabaseID     types.String `tfsdk:"database_id"`
 	Scopes         types.Set    `tfsdk:"scopes"`
 	Secret         types.String `tfsdk:"secret"`
 }
@@ -34,10 +34,10 @@ func (r *apiKeyResource) Metadata(_ context.Context, req resource.MetadataReques
 func (r *apiKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{Description: "Project API key. The secret is stored in Terraform state: sensitive only hides display. Use an encrypted restricted state backend. Imports cannot recover secrets. Every configuration change replaces and revokes the old key.", Attributes: map[string]schema.Attribute{
 		"id": stateID(), "organization_id": idAttribute("Owning organization ULID."), "project_id": idAttribute("Owning project ULID."),
-		"name":          schema.StringAttribute{Required: true, Description: "Key display name; changes replace the key.", Validators: []validator.String{displayNameValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"database_name": schema.StringAttribute{Optional: true, Description: "Restrict to a database name. Omit to reach every database of the project. Changes replace the key.", Validators: []validator.String{stringvalidator.RegexMatches(namePattern, "Use a lowercase database name, up to 63 characters.")}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"scopes":        schema.SetAttribute{Required: true, ElementType: types.StringType, Description: "Nonempty subset of documents:read and documents:write. Changes replace the key.", Validators: []validator.Set{setvalidator.SizeAtLeast(1), setvalidator.NoNullValues(), setvalidator.ValueStringsAre(stringvalidator.OneOf("documents:read", "documents:write"))}, PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplace()}},
-		"secret":        schema.StringAttribute{Computed: true, Sensitive: true, Description: "Secret returned once on creation, persisted in state. Null for imported keys."},
+		"name":        schema.StringAttribute{Required: true, Description: "Key display name; changes replace the key.", Validators: []validator.String{displayNameValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"database_id": schema.StringAttribute{Optional: true, Description: "Restrict to an immutable database ULID. Omit to reach every database of the project. Changes replace the key.", Validators: []validator.String{idValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"scopes":      schema.SetAttribute{Required: true, ElementType: types.StringType, Description: "Nonempty subset of databases:read, databases:write, sql:read and sql:write. Changes replace the key.", Validators: []validator.Set{setvalidator.SizeAtLeast(1), setvalidator.NoNullValues(), setvalidator.ValueStringsAre(stringvalidator.OneOf(tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite, tsauth.ScopeSQLRead, tsauth.ScopeSQLWrite))}, PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplace()}},
+		"secret":      schema.StringAttribute{Computed: true, Sensitive: true, Description: "Secret returned once on creation, persisted in state. Null for imported keys."},
 	}}
 }
 func (r *apiKeyResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -47,9 +47,9 @@ func (m *apiKeyModel) apply(ctx context.Context, p tsauth.APIKey) {
 	m.ID = types.StringValue(p.ID)
 	m.Name = types.StringValue(p.Name)
 	if p.Database == "" {
-		m.DatabaseName = types.StringNull()
+		m.DatabaseID = types.StringNull()
 	} else {
-		m.DatabaseName = types.StringValue(p.Database)
+		m.DatabaseID = types.StringValue(p.Database)
 	}
 	m.Scopes, _ = types.SetValueFrom(ctx, types.StringType, p.Scopes)
 }
@@ -64,7 +64,7 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	p, err := r.clients.management.CreateAPIKey(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), tsauth.APIKeyRequest{Name: m.Name.ValueString(), Database: m.DatabaseName.ValueString(), Scopes: scopes})
+	p, err := r.clients.management.CreateAPIKey(ctx, m.OrganizationID.ValueString(), m.ProjectID.ValueString(), tsauth.APIKeyRequest{Name: m.Name.ValueString(), Database: m.DatabaseID.ValueString(), Scopes: scopes})
 	if err != nil {
 		apiError(&resp.Diagnostics, "Create API key", err)
 		return

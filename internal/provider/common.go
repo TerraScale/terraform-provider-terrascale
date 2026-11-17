@@ -84,24 +84,12 @@ func requireManagement(c *clients, d *diag.Diagnostics) bool {
 	}
 	return true
 }
-func requireData(c *clients, d *diag.Diagnostics) bool {
-	if c == nil || c.data == nil {
-		d.AddError("Missing project token", "Set project_token or TERRASCALE_PROJECT_TOKEN to an existing credential for this collection's project.")
-		return false
-	}
-	return true
-}
-
-// notFound reports a typed resource-absent 404. A 404 with another code,
-// such as unknown_route from an API path the server no longer serves or an
-// untyped proxy 404, is an error: removing state for it would make Terraform
-// plan to recreate resources that still exist.
 func notFound(err error) bool {
 	var api *tb.APIError
 	var auth *tsauth.APIError
 	switch {
 	case errors.As(err, &api):
-		return api.Status == http.StatusNotFound && (api.Code == tb.ErrUnknownDatabase || api.Code == tb.ErrUnknownCollection || api.Code == tb.ErrNotFound)
+		return api.Status == http.StatusNotFound && (api.Code == tb.ErrUnknownDatabase || api.Code == tb.ErrNotFound)
 	case errors.As(err, &auth):
 		return auth.Status == http.StatusNotFound && auth.Code == tsauth.ErrNotFound
 	}
@@ -122,7 +110,6 @@ var errorGuidance = map[string]string{
 	"forbidden":                 "The user's role does not allow this operation.",
 	"forbidden_role":            "The user's role does not allow this operation.",
 	"unknown_database":          "The database does not exist, or project_token belongs to a different project.",
-	"unknown_collection":        "The collection does not exist.",
 	"not_found":                 "The resource does not exist, or the user cannot reach its organization.",
 	"unknown_route":             "The API does not serve this route. Upgrade the provider to a release that matches the current TerraScale API.",
 	"invalid_request":           "The API rejected the request as invalid. Check the configured values.",
@@ -180,7 +167,7 @@ func apiError(d *diag.Diagnostics, operation string, err error) {
 		}
 	}
 	if status == http.StatusUnauthorized || (token != nil && (token.Code == "invalid_grant" || token.Code == "invalid_token" || token.Code == "invalid_client")) {
-		detail = "The user or project access token expired or was rejected. Supply a current ts-auth user access token for access_token, or replace project_token for collections, and retry. Token values and server details are omitted."
+		detail = "The user or project access token expired or was rejected. Supply a current ts-auth user access token for access_token, or replace project_token, and retry. Token values and server details are omitted."
 	}
 	var netErr net.Error
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {

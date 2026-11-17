@@ -38,11 +38,11 @@
 
 # terraform-provider-terrascale
 
-Terraform provider for TerraScale: manages projects, databases, collections and project API keys.
+Terraform provider for TerraScale: manages projects, databases, database rules and project API keys.
 
 ## Layout and checks
 
-- `main.go` starts the provider. `internal/provider/` holds the project, database, collection and API key resources. `docs/` and `examples/` hold the registry docs and examples; `scripts/` holds the release-binary check.
+- `main.go` starts the provider. `internal/provider/` holds the project, database, database rules and API key resources. `docs/` and `examples/` hold the registry docs and examples; `scripts/` holds the release-binary check.
 - The Go version is pinned in `.go-version`; release config is `.goreleaser.yml`.
 - Build: `go build ./...`. Check: `go vet ./...`. No tests in this repo.
 - CI (`ci.yml`) also runs `goreleaser check` and, like the release (`release.yml`), the advisory action `.github/actions/advisories`: the pinned govulncheck's module scan and source reachability scan.

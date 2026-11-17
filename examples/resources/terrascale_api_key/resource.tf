@@ -2,7 +2,7 @@ resource "terrascale_api_key" "reader" {
   organization_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
   project_id      = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
   name            = "Document reader"
-  scopes          = ["documents:read"]
+  scopes          = ["databases:read"]
   database_name   = "main"
 }
 

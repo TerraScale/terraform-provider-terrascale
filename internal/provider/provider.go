@@ -42,9 +42,9 @@ func (p *terraScaleProvider) Metadata(_ context.Context, _ provider.MetadataRequ
 	resp.Version = p.version
 }
 func (p *terraScaleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
-	resp.Schema = schema.Schema{Description: "Manage TerraScale projects, databases, collections and project API keys through the public SDK.", Attributes: map[string]schema.Attribute{
+	resp.Schema = schema.Schema{Description: "Manage TerraScale projects, databases, database rules and project API keys through the public SDK.", Attributes: map[string]schema.Attribute{
 		"access_token":  schema.StringAttribute{Optional: true, Sensitive: true, Description: "ts-cli user access token from ts-auth for management resources. Defaults to TERRASCALE_ACCESS_TOKEN. Never use an internal peer credential."},
-		"project_token": schema.StringAttribute{Optional: true, Sensitive: true, Description: "Public ts-auth project API key or project access token for collections. Keys are exchanged for tokens with documents:read and documents:write. Defaults to TERRASCALE_PROJECT_TOKEN. Must authorize the resource's project."},
+		"project_token": schema.StringAttribute{Optional: true, Sensitive: true, Description: "Public ts-auth project API key or project access token for database rules. Keys are exchanged for databases:read and databases:write. Defaults to TERRASCALE_PROJECT_TOKEN. Must authorize the resource's project."},
 	}}
 }
 func (p *terraScaleProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
@@ -83,8 +83,7 @@ func (p *terraScaleProvider) Configure(ctx context.Context, req provider.Configu
 			if strings.Contains(token, ".") {
 				dataConfig.Token = token
 			} else {
-				// ts-auth derives the project from the authenticated project key's metadata.
-				tokens, err := tsauth.NewAPIKeySource(tsauth.APIKeyConfig{Key: token, Scopes: []string{tsauth.ScopeDocumentsRead, tsauth.ScopeDocumentsWrite}, HTTPClient: p.httpClient})
+				tokens, err := tsauth.NewAPIKeySource(tsauth.APIKeyConfig{Key: token, Scopes: []string{tsauth.ScopeDatabasesRead, tsauth.ScopeDatabasesWrite}, HTTPClient: p.httpClient})
 				if err != nil {
 					resp.Diagnostics.AddError("Invalid project token", "Use a public ts-auth project API key (<ULID>_<52 base32 characters>) or a ts-auth project access token.")
 					return
@@ -102,11 +101,10 @@ func (p *terraScaleProvider) Configure(ctx context.Context, req provider.Configu
 	resp.ResourceData = c
 }
 func (p *terraScaleProvider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{func() resource.Resource { return &projectResource{} }, func() resource.Resource { return &databaseResource{} }, func() resource.Resource { return &collectionResource{} }, func() resource.Resource { return &apiKeyResource{} }}
+	return []func() resource.Resource{func() resource.Resource { return &projectResource{} }, func() resource.Resource { return &databaseResource{} }, func() resource.Resource { return &apiKeyResource{} }, func() resource.Resource { return &databaseRulesResource{} }}
 }
 func (p *terraScaleProvider) DataSources(context.Context) []func() datasource.DataSource { return nil }
 
-// project reuses the exchange source and its cached token for each project.
 func (c *clients) project(org, project string) (*tb.Client, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
